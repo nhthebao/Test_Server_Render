@@ -92,10 +92,25 @@ app.get('/users', async (req, res) => {
   }
 });
 
-// ✏️ UPDATE User by ID (MongoDB _id)
+// 📄 READ One User by id (U001, U007, …)
+app.get('/users/:id', async (req, res) => {
+  try {
+    const user = await User.findOne({ id: req.params.id });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✏️ UPDATE User by id
 app.put('/users/:id', async (req, res) => {
   try {
-    const updatedUser = await User.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const updatedUser = await User.findOneAndUpdate(
+      { id: req.params.id },
+      req.body,
+      { new: true }
+    );
     if (!updatedUser) return res.status(404).json({ message: 'User not found' });
     res.json({ message: '✅ User updated', user: updatedUser });
   } catch (err) {
@@ -103,10 +118,10 @@ app.put('/users/:id', async (req, res) => {
   }
 });
 
-// ❌ DELETE User by ID
+// ❌ DELETE User by id
 app.delete('/users/:id', async (req, res) => {
   try {
-    const deletedUser = await User.findByIdAndDelete(req.params.id);
+    const deletedUser = await User.findOneAndDelete({ id: req.params.id });
     if (!deletedUser) return res.status(404).json({ message: 'User not found' });
     res.json({ message: '🗑️ User deleted successfully' });
   } catch (err) {
@@ -140,10 +155,25 @@ app.get('/desserts', async (req, res) => {
   }
 });
 
-// ✏️ UPDATE Dessert by ID
+// 📄 READ One Dessert by id (D001, D039, …)
+app.get('/desserts/:id', async (req, res) => {
+  try {
+    const dessert = await Dessert.findOne({ id: req.params.id });
+    if (!dessert) return res.status(404).json({ message: 'Dessert not found' });
+    res.json(dessert);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ✏️ UPDATE Dessert by id
 app.put('/desserts/:id', async (req, res) => {
   try {
-    const updatedDessert = await Dessert.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    const updatedDessert = await Dessert.findOneAndUpdate(
+      { id: req.params.id },
+      req.body,
+      { new: true }
+    );
     if (!updatedDessert) return res.status(404).json({ message: 'Dessert not found' });
     res.json({ message: '✅ Dessert updated', dessert: updatedDessert });
   } catch (err) {
@@ -151,10 +181,10 @@ app.put('/desserts/:id', async (req, res) => {
   }
 });
 
-// ❌ DELETE Dessert by ID
+// ❌ DELETE Dessert by id
 app.delete('/desserts/:id', async (req, res) => {
   try {
-    const deletedDessert = await Dessert.findByIdAndDelete(req.params.id);
+    const deletedDessert = await Dessert.findOneAndDelete({ id: req.params.id });
     if (!deletedDessert) return res.status(404).json({ message: 'Dessert not found' });
     res.json({ message: '🗑️ Dessert deleted successfully' });
   } catch (err) {
