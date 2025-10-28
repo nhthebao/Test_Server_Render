@@ -20,16 +20,17 @@ mongoose.connect(process.env.MONGO_URI)
 
 // 👤 USER SCHEMA
 const UserSchema = new mongoose.Schema({
-  id: { type: String, required: true }, // Mã người dùng (vd: U001)
+  id: { type: String, required: true },
   fullName: { type: String, required: true },
   address: { type: String },
   phone: { type: String },
-  cart: [{ type: String }], // Danh sách ID món ăn
+  cart: [{ type: String }], 
   username: { type: String, required: true },
   password: { type: String, required: true },
-  favorite: [{ type: String }], // Danh sách ID dessert yêu thích
-  payment: { type: String } // momo, cash, etc.
-}, { collection: 'user' });
+  favorite: [{ type: String }],
+  payment: { type: String }, 
+  image: {type: String}
+}, { collection: 'users' });
 
 // 🍰 DESSERT SCHEMA
 const ReviewSchema = new mongoose.Schema({
@@ -40,7 +41,7 @@ const ReviewSchema = new mongoose.Schema({
 });
 
 const DessertSchema = new mongoose.Schema({
-  id: { type: String, required: true }, // Mã món (vd: D001)
+  id: { type: String, required: true },
   name: { type: String, required: true },
   rating: { type: Number, default: 0 },
   price: { type: Number, required: true },
@@ -51,8 +52,8 @@ const DessertSchema = new mongoose.Schema({
   image: { type: String },
   description: { type: String },
   freeDelivery: { type: Boolean, default: false },
-  review: [ReviewSchema] // Danh sách review chi tiết
-}, { collection: 'dessert' });
+  review: [ReviewSchema] 
+}, { collection: 'desserts' });
 
 const User = mongoose.model('User', UserSchema);
 const Dessert = mongoose.model('Dessert', DessertSchema);
