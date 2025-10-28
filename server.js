@@ -24,7 +24,16 @@ const UserSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   address: { type: String },
   phone: { type: String },
-  cart: [{ type: String }], 
+  cart: [
+    {
+      item: { type: String, required: true },   // id dessert
+      quantity: { 
+        type: Number, 
+        required: true, 
+        min: [1, 'Quantity must be at least 1'] 
+      },
+    },
+  ],
   username: { type: String, required: true },
   password: { type: String, required: true },
   favorite: [{ type: String }],
@@ -193,6 +202,90 @@ app.delete('/desserts/:id', async (req, res) => {
   }
 });
 
+// =============================
+// 🛒 CART CRUD
+// =============================
+
+// 📄 READ: Lấy giỏ hàng của user
+app.get('/users/:id/cart', async (req, res) => {
+  try {
+    const user = await User.findOne({ id: req.params.id });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+    res.json(user.cart);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ➕ CREATE / ADD: Thêm sản phẩm vào giỏ hàng
+app.post('/users/:id/cart', async (req, res) => {
+  try {
+    const { item, quantity } = req.body;
+    if (!item || !quantity) {
+      return res.status(400).json({ message: 'Item and quantity are required' });
+    }
+
+    const user = await User.findOne({ id: req.params.id });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const existingItem = user.cart.find(c => c.item === item);
+
+    if (existingItem) {
+      existingItem.quantity += quantity;
+    } else {
+      user.cart.push({ item, quantity });
+    }
+
+    await user.save();
+    res.json({ message: '✅ Item added to cart', cart: user.cart });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ✏️ UPDATE: Cập nhật số lượng sản phẩm trong giỏ
+app.put('/users/:id/cart/:itemId', async (req, res) => {
+  try {
+    const { quantity } = req.body;
+    if (quantity < 0) {
+      return res.status(400).json({ message: '❌ Quantity cannot be negative' });
+    }
+
+    const user = await User.findOne({ id: req.params.id });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    const cartItem = user.cart.find(c => c.item === req.params.itemId);
+    if (!cartItem) return res.status(404).json({ message: 'Item not found in cart' });
+
+    if (quantity === 0) {
+      user.cart = user.cart.filter(c => c.item !== req.params.itemId);
+    } else {
+      cartItem.quantity = quantity;
+    }
+
+    await user.save();
+    res.json({ message: '✅ Cart updated', cart: user.cart });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+// ❌ DELETE: Xóa sản phẩm khỏi giỏ hàng
+app.delete('/users/:id/cart/:itemId', async (req, res) => {
+  try {
+    const user = await User.findOne({ id: req.params.id });
+    if (!user) return res.status(404).json({ message: 'User not found' });
+
+    user.cart = user.cart.filter(c => c.item !== req.params.itemId);
+    await user.save();
+
+    res.json({ message: '🗑️ Item removed from cart', cart: user.cart });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ============================================
 // ⚙️ RUN SERVER
