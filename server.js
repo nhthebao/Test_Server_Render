@@ -3,6 +3,10 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 require("dotenv").config();
 
+const admin = require("./firebase");
+const jwt = require("jsonwebtoken");
+const { verifyToken } = require("./middlewares/auth");
+
 const app = express();
 app.use(express.json());
 app.use(cors());
@@ -83,70 +87,61 @@ app.get("/", (req, res) => {
   res.send("🚀 Backend connected with Firebase Auth!");
 });
 
-// =============================
-// USERS CRUD (Đồng bộ client)
-// =============================
+// ============================================
+// AUTH ROUTES
+// ============================================
 
-// 🟢 REGISTER USER (Firebase đã xác thực xong → server chỉ lưu)
-app.post("/users", async (req, res) => {
+// 🟢 LOGIN or REGISTER (qua Firebase)
+app.post("/auth/login", async (req, res) => {
   try {
-    const { username, email } = req.body;
+    const { firebaseToken } = req.body;
+    if (!firebaseToken)
+      return res.status(400).json({ message: "❌ Missing Firebase token" });
 
-    // kiểm tra trùng username hoặc email
-    const existingUser = await User.findOne({
-      $or: [{ username }, { email }],
+    // ✅ Xác minh token bằng Firebase Admin SDK
+    const decoded = await admin.auth().verifyIdToken(firebaseToken);
+    const { uid, email, name, picture, phone_number } = decoded;
+
+    // 🔍 Tìm user trong MongoDB
+    let user = await User.findOne({ id: uid });
+
+    // 🟢 Nếu chưa có → tạo mới
+    if (!user) {
+      user = new User({
+        id: uid,
+        fullName: name || "No name",
+        username: email?.split("@")[0] || uid,
+        email: email || "noemail@firebase.com",
+        phone: phone_number || "",
+        image: picture || undefined,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      await user.save();
+    }
+
+    // 🧾 Tạo JWT riêng cho backend (hạn 7 ngày)
+    const token = jwt.sign(
+      { id: user.id, username: user.username },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.json({
+      message: "✅ Firebase login success",
+      token,
+      user,
     });
-
-    if (existingUser) {
-      return res
-        .status(400)
-        .json({ message: "⚠️ Username hoặc email đã tồn tại" });
-    }
-
-    // password KHÔNG lưu, vì Firebase đã quản lý
-    const userData = {
-      ...req.body,
-      password: undefined,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    const newUser = new User(userData);
-    await newUser.save();
-
-    res.status(201).json(newUser);
   } catch (err) {
+    console.error("Auth error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// 🟡 GET USERS (hỗ trợ cả ?username=... và ?email=...)
-app.get("/users", async (req, res) => {
+// Lấy thông tin user hiện tại
+app.get("/auth/me", verifyToken, async (req, res) => {
   try {
-    const { username, email } = req.query;
-
-    if (username) {
-      const users = await User.find({ username: username.trim() });
-      return res.json(users);
-    }
-
-    if (email) {
-      const users = await User.find({ email: email.trim() });
-      return res.json(users);
-    }
-
-    // nếu không truyền query thì trả hết
-    const allUsers = await User.find();
-    res.json(allUsers);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 🔍 GET USER BY ID
-app.get("/users/:id", async (req, res) => {
-  try {
-    const user = await User.findOne({ id: req.params.id });
+    const user = await User.findOne({ id: req.user.id });
     if (!user) return res.status(404).json({ message: "User not found" });
     res.json(user);
   } catch (err) {
@@ -154,38 +149,64 @@ app.get("/users/:id", async (req, res) => {
   }
 });
 
-// ✏️ UPDATE USER
-app.put("/users/:id", async (req, res) => {
+// LOGOUT (tùy chọn)
+app.post("/auth/logout", verifyToken, async (req, res) => {
   try {
-    const updatedUser = await User.findOneAndUpdate(
-      { id: req.params.id },
-      {
-        ...req.body,
-        updatedAt: new Date().toISOString(),
-      },
-      { new: true }
-    );
-
-    if (!updatedUser)
-      return res.status(404).json({ message: "User not found" });
-
-    res.json({ message: "✅ User updated", user: updatedUser });
+    // Tùy chọn: bạn có thể lưu token đã bị revoke vào DB nếu cần
+    res.json({ message: "✅ Logged out successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ❌ DELETE USER
-app.delete("/users/:id", async (req, res) => {
+// Cập nhật profile user
+app.put("/auth/update-profile", verifyToken, async (req, res) => {
   try {
-    const deletedUser = await User.findOneAndDelete({ id: req.params.id });
-    if (!deletedUser)
-      return res.status(404).json({ message: "User not found" });
-
-    res.json({ message: "🗑️ User deleted successfully" });
+    const updated = await User.findOneAndUpdate(
+      { id: req.user.id },
+      { ...req.body, updatedAt: new Date().toISOString() },
+      { new: true }
+    );
+    res.json({ message: "✅ Profile updated", user: updated });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Xóa tài khoản
+app.delete("/auth/delete", verifyToken, async (req, res) => {
+  try {
+    const user = await User.findOneAndDelete({ id: req.user.id });
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // ❗ Xóa luôn trong Firebase
+    await admin.auth().deleteUser(req.user.id);
+
+    res.json({ message: "🗑️ Account deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Refresh JWT token
+app.post("/auth/refresh-token", verifyToken, (req, res) => {
+  const newToken = jwt.sign(
+    { id: req.user.id, username: req.user.username },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+  res.json({ token: newToken });
+});
+
+// Đặt lại mật khẩu (qua Firebase)
+app.post("/auth/password/reset", async (req, res) => {
+  const { firebaseToken, newPassword } = req.body;
+  const decoded = await admin.auth().verifyIdToken(firebaseToken);
+  const uid = decoded.uid;
+
+  const hashed = await bcrypt.hash(newPassword, 10);
+  await User.findOneAndUpdate({ id: uid }, { password: hashed });
+  res.json({ message: "✅ Password updated" });
 });
 
 // =============================
