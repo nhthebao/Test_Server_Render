@@ -110,6 +110,60 @@ app.get("/users/:id", async (req, res) => {
   }
 });
 
+// 🔹 Lấy danh sách tất cả user (có thể lọc theo email / username)
+app.get("/users", async (req, res) => {
+  try {
+    const { email, username } = req.query;
+    let query = {};
+
+    if (email) query.email = email;
+    if (username) query.username = username;
+
+    const users = await User.find(query);
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Lấy user theo ID (MongoDB _id hoặc id)
+app.get("/users/:id", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id); // hoặc findOne({ id: req.params.id })
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json(user);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Tạo user mới
+app.post("/users", async (req, res) => {
+  try {
+    const newUser = new User(req.body);
+    await newUser.save();
+    res.status(201).json(newUser);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// 🔹 Cập nhật thông tin user
+app.put("/users/:id", async (req, res) => {
+  try {
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { ...req.body, updatedAt: new Date() },
+      { new: true }
+    );
+    if (!updatedUser)
+      return res.status(404).json({ message: "User not found" });
+    res.json(updatedUser);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ============================================
 // AUTH ROUTES
 // ============================================
