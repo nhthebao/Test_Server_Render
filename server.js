@@ -85,6 +85,57 @@ const DessertSchema = new mongoose.Schema(
 const User = mongoose.model("User", UserSchema);
 const Dessert = mongoose.model("Dessert", DessertSchema);
 
+// Order Schema
+const OrderSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    items: [
+      {
+        dessertId: { type: String, required: true },
+        dessertName: { type: String },
+        dessertImage: { type: String },
+        quantity: { type: Number, required: true, min: 1 },
+        price: { type: Number, required: true },
+        discount: { type: Number, default: 0 },
+      },
+    ],
+    totalAmount: { type: Number, required: true },
+    discount: { type: Number, default: 0 },
+    deliveryFee: { type: Number, default: 0 },
+    finalAmount: { type: Number, required: true },
+    status: {
+      type: String,
+      enum: [
+        "pending",
+        "confirmed",
+        "preparing",
+        "delivering",
+        "delivered",
+        "cancelled",
+      ],
+      default: "pending",
+    },
+    paymentMethod: { type: String, default: "momo" },
+    paymentStatus: {
+      type: String,
+      enum: ["unpaid", "paid", "refunded"],
+      default: "unpaid",
+    },
+    deliveryAddress: {
+      fullAddress: { type: String, required: true },
+      phone: { type: String, required: true },
+      note: { type: String },
+    },
+    estimatedDeliveryTime: { type: String },
+    createdAt: { type: String, default: () => new Date().toISOString() },
+    updatedAt: { type: String, default: () => new Date().toISOString() },
+  },
+  { collection: "orders" }
+);
+
+const Order = mongoose.model("Order", OrderSchema);
+
 // ============================================
 // ROUTES
 // ============================================
@@ -351,6 +402,348 @@ app.delete("/desserts/:id", async (req, res) => {
     if (!deletedDessert)
       return res.status(404).json({ message: "Dessert not found" });
     res.json({ message: "🗑️ Dessert deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================
+// ORDERS API
+// =============================
+
+// 🔹 Tạo đơn hàng mới
+app.post("/orders", verifyToken, async (req, res) => {
+  try {
+    const {
+      items,
+      totalAmount,
+      discount,
+      deliveryFee,
+      finalAmount,
+      paymentMethod,
+      deliveryAddress,
+      estimatedDeliveryTime,
+    } = req.body;
+
+    // Validate required fields
+    if (!items || items.length === 0) {
+      return res.status(400).json({ message: "❌ Items are required" });
+    }
+    if (
+      !deliveryAddress ||
+      !deliveryAddress.fullAddress ||
+      !deliveryAddress.phone
+    ) {
+      return res
+        .status(400)
+        .json({ message: "❌ Delivery address and phone are required" });
+    }
+
+    // Generate unique order ID
+    const orderId = `ORD-${Date.now()}-${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+
+    const newOrder = new Order({
+      id: orderId,
+      userId: req.user.id,
+      items,
+      totalAmount,
+      discount: discount || 0,
+      deliveryFee: deliveryFee || 0,
+      finalAmount,
+      paymentMethod: paymentMethod || "momo",
+      deliveryAddress,
+      estimatedDeliveryTime,
+      status: "pending",
+      paymentStatus: "unpaid",
+    });
+
+    await newOrder.save();
+
+    // Optional: Clear cart after creating order
+    await User.findOneAndUpdate({ id: req.user.id }, { cart: [] });
+
+    res.status(201).json({
+      message: "✅ Order created successfully",
+      order: newOrder,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Lấy tất cả đơn hàng (Admin) hoặc của user hiện tại
+app.get("/orders", verifyToken, async (req, res) => {
+  try {
+    const { status, paymentStatus, page = 1, limit = 10 } = req.query;
+
+    let query = { userId: req.user.id };
+
+    // Filter by status
+    if (status) query.status = status;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
+
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
+
+    const total = await Order.countDocuments(query);
+
+    res.json({
+      orders,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Lấy tất cả đơn hàng của tất cả users (Admin only)
+app.get("/orders/all", async (req, res) => {
+  try {
+    const { status, paymentStatus, userId, page = 1, limit = 10 } = req.query;
+
+    let query = {};
+
+    if (status) query.status = status;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
+    if (userId) query.userId = userId;
+
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit));
+
+    const total = await Order.countDocuments(query);
+
+    res.json({
+      orders,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Lấy chi tiết đơn hàng theo ID
+app.get("/orders/:id", verifyToken, async (req, res) => {
+  try {
+    const order = await Order.findOne({ id: req.params.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // Check if user owns this order
+    if (order.userId !== req.user.id) {
+      return res.status(403).json({ message: "❌ Access denied" });
+    }
+
+    res.json(order);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Cập nhật trạng thái đơn hàng (Admin/User)
+app.patch("/orders/:id/status", verifyToken, async (req, res) => {
+  try {
+    const { status } = req.body;
+
+    const validStatuses = [
+      "pending",
+      "confirmed",
+      "preparing",
+      "delivering",
+      "delivered",
+      "cancelled",
+    ];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ message: "❌ Invalid status" });
+    }
+
+    const order = await Order.findOne({ id: req.params.id });
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // User can only cancel their own pending orders
+    if (order.userId !== req.user.id && status === "cancelled") {
+      if (order.status !== "pending") {
+        return res
+          .status(400)
+          .json({ message: "❌ Can only cancel pending orders" });
+      }
+    }
+
+    order.status = status;
+    order.updatedAt = new Date().toISOString();
+    await order.save();
+
+    res.json({
+      message: "✅ Order status updated",
+      order,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Cập nhật trạng thái thanh toán
+app.patch("/orders/:id/payment", verifyToken, async (req, res) => {
+  try {
+    const { paymentStatus } = req.body;
+
+    const validPaymentStatuses = ["unpaid", "paid", "refunded"];
+    if (!validPaymentStatuses.includes(paymentStatus)) {
+      return res.status(400).json({ message: "❌ Invalid payment status" });
+    }
+
+    const order = await Order.findOne({ id: req.params.id });
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    order.paymentStatus = paymentStatus;
+    order.updatedAt = new Date().toISOString();
+    await order.save();
+
+    res.json({
+      message: "✅ Payment status updated",
+      order,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Cập nhật thông tin đơn hàng (địa chỉ, ghi chú)
+app.put("/orders/:id", verifyToken, async (req, res) => {
+  try {
+    const order = await Order.findOne({ id: req.params.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // User can only update their own orders
+    if (order.userId !== req.user.id) {
+      return res.status(403).json({ message: "❌ Access denied" });
+    }
+
+    // Can only update pending orders
+    if (order.status !== "pending") {
+      return res
+        .status(400)
+        .json({ message: "❌ Can only update pending orders" });
+    }
+
+    const { deliveryAddress, estimatedDeliveryTime } = req.body;
+
+    if (deliveryAddress) order.deliveryAddress = deliveryAddress;
+    if (estimatedDeliveryTime)
+      order.estimatedDeliveryTime = estimatedDeliveryTime;
+
+    order.updatedAt = new Date().toISOString();
+    await order.save();
+
+    res.json({
+      message: "✅ Order updated successfully",
+      order,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Hủy đơn hàng
+app.delete("/orders/:id", verifyToken, async (req, res) => {
+  try {
+    const order = await Order.findOne({ id: req.params.id });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    // User can only cancel their own orders
+    if (order.userId !== req.user.id) {
+      return res.status(403).json({ message: "❌ Access denied" });
+    }
+
+    // Can only cancel pending orders
+    if (order.status !== "pending") {
+      return res
+        .status(400)
+        .json({ message: "❌ Can only cancel pending orders" });
+    }
+
+    order.status = "cancelled";
+    order.updatedAt = new Date().toISOString();
+    await order.save();
+
+    res.json({
+      message: "🗑️ Order cancelled successfully",
+      order,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Lấy lịch sử đơn hàng của user
+app.get("/users/:userId/orders", verifyToken, async (req, res) => {
+  try {
+    // User can only view their own orders
+    if (req.params.userId !== req.user.id) {
+      return res.status(403).json({ message: "❌ Access denied" });
+    }
+
+    const orders = await Order.find({ userId: req.params.userId }).sort({
+      createdAt: -1,
+    });
+
+    res.json({ orders, total: orders.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Thống kê đơn hàng theo trạng thái
+app.get("/orders/stats/summary", verifyToken, async (req, res) => {
+  try {
+    const stats = await Order.aggregate([
+      { $match: { userId: req.user.id } },
+      {
+        $group: {
+          _id: "$status",
+          count: { $sum: 1 },
+          totalAmount: { $sum: "$finalAmount" },
+        },
+      },
+    ]);
+
+    const summary = {
+      totalOrders: await Order.countDocuments({ userId: req.user.id }),
+      totalSpent: await Order.aggregate([
+        { $match: { userId: req.user.id, paymentStatus: "paid" } },
+        { $group: { _id: null, total: { $sum: "$finalAmount" } } },
+      ]).then((result) => result[0]?.total || 0),
+      byStatus: stats,
+    };
+
+    res.json(summary);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
