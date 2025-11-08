@@ -33,8 +33,8 @@ const UserSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
     fullName: { type: String, required: true },
-    username: { type: String, required: true, unique: true },
-    email: { type: String, required: true },
+    username: { type: String, required: true, unique: true, index: true },
+    email: { type: String, required: true, unique: true, index: true },
     phone: { type: String },
     address: { type: String },
     authProvider: { type: String, default: "firebase" },
@@ -224,8 +224,59 @@ app.put("/users/:id", async (req, res) => {
 // ============================================
 // AUTH ROUTES
 // ============================================
+// ============================================
+// 2️⃣ ENDPOINT: Check username/email trùng khi đăng ký
+// ============================================
 
-// 🔹 Resolve username/email/phone thành email (để client biết email nào để đăng nhập Firebase)
+app.post("/auth/check-availability", async (req, res) => {
+  try {
+    const { username, email } = req.body;
+
+    if (!username && !email) {
+      return res.status(400).json({
+        message: "❌ Phải cung cấp username hoặc email",
+      });
+    }
+
+    let available = true;
+    let reason = "";
+
+    // Kiểm tra username
+    if (username) {
+      const existingUsername = await User.findOne({
+        username: username.toLowerCase(),
+      });
+      if (existingUsername) {
+        available = false;
+        reason = "Username đã tồn tại";
+      }
+    }
+
+    // Kiểm tra email
+    if (email && available) {
+      const existingEmail = await User.findOne({
+        email: email.toLowerCase(),
+      });
+      if (existingEmail) {
+        available = false;
+        reason = "Email đã tồn tại";
+      }
+    }
+
+    res.json({
+      available,
+      reason: reason || "✅ Available",
+    });
+  } catch (err) {
+    console.error("❌ Check availability error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================
+// 3️⃣ ENDPOINT: Resolve identifier (FIX)
+// ============================================
+
 app.post("/auth/resolve-identifier", async (req, res) => {
   try {
     const { username, email, phone } = req.body;
@@ -236,10 +287,10 @@ app.post("/auth/resolve-identifier", async (req, res) => {
       });
     }
 
-    // Tìm user theo identifier
     let user = null;
 
     if (username) {
+      // ✅ FIX: Convert lowercase trước khi tìm
       user = await User.findOne({ username: username.toLowerCase() });
     } else if (email) {
       user = await User.findOne({ email: email.toLowerCase() });
@@ -254,7 +305,7 @@ app.post("/auth/resolve-identifier", async (req, res) => {
       });
     }
 
-    // Trả email để client dùng đăng nhập Firebase
+    // ✅ Trả email + username (để client verify)
     res.json({
       message: "✅ Identifier resolved",
       email: user.email,
@@ -266,10 +317,14 @@ app.post("/auth/resolve-identifier", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// 🟢 LOGIN or REGISTER (qua Firebase)
+
+// ============================================
+// 4️⃣ ENDPOINT: LOGIN (FIX)
+// ============================================
+
 app.post("/auth/login", async (req, res) => {
   try {
-    const { firebaseToken, username, fullName } = req.body; // ✅ Thêm username, fullName
+    const { firebaseToken, username, fullName } = req.body;
     if (!firebaseToken)
       return res.status(400).json({ message: "❌ Missing Firebase token" });
 
@@ -279,19 +334,44 @@ app.post("/auth/login", async (req, res) => {
 
     console.log("🔍 Auth decoded:", { uid, email, username, fullName });
 
-    // 🔍 Tìm user trong MongoDB
+    // 🔍 Tìm user theo UID (chính xác nhất)
     let user = await User.findOne({ id: uid });
 
     // 🟢 Nếu chưa có → tạo mới
     if (!user) {
       console.log("📝 Creating new user:", { uid, email, username, fullName });
 
+      // ✅ Normalize username & email
+      const normalizedUsername = username
+        ? username.toLowerCase()
+        : email?.split("@")[0].toLowerCase();
+      const normalizedEmail = email.toLowerCase();
+
+      // ✅ Check duplicate trước khi tạo
+      const duplicateUsername = await User.findOne({
+        username: normalizedUsername,
+      });
+      if (duplicateUsername) {
+        return res.status(409).json({
+          message: "❌ Username đã tồn tại",
+          code: "USERNAME_CONFLICT",
+        });
+      }
+
+      const duplicateEmail = await User.findOne({ email: normalizedEmail });
+      if (duplicateEmail) {
+        return res.status(409).json({
+          message: "❌ Email đã tồn tại",
+          code: "EMAIL_CONFLICT",
+        });
+      }
+
       user = new User({
         id: uid,
-        fullName: fullName,
-        username: username,
-        email: email,
-        phone: phone_number,
+        fullName: fullName || "No name",
+        username: normalizedUsername,
+        email: normalizedEmail,
+        phone: phone_number || "",
         image: picture || undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -302,7 +382,7 @@ app.post("/auth/login", async (req, res) => {
       console.log("✅ Existing user found:", user.username);
     }
 
-    // 🧾 Tạo JWT riêng cho backend (hạn 7 ngày)
+    // 🧾 Tạo JWT
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET,
