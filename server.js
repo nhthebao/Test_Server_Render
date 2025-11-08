@@ -225,6 +225,48 @@ app.put("/users/:id", async (req, res) => {
 // AUTH ROUTES
 // ============================================
 
+// 🔹 Resolve username/email/phone thành email (để client biết email nào để đăng nhập Firebase)
+app.post("/auth/resolve-identifier", async (req, res) => {
+  try {
+    const { username, email, phone } = req.body;
+
+    if (!username && !email && !phone) {
+      return res.status(400).json({
+        message: "❌ Phải cung cấp username, email hoặc phone",
+      });
+    }
+
+    // Tìm user theo identifier
+    let user = null;
+
+    if (username) {
+      user = await User.findOne({ username: username.toLowerCase() });
+    } else if (email) {
+      user = await User.findOne({ email: email.toLowerCase() });
+    } else if (phone) {
+      user = await User.findOne({ phone });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        message: "❌ User không tồn tại",
+        identifier: username || email || phone,
+      });
+    }
+
+    // Trả email để client dùng đăng nhập Firebase
+    res.json({
+      message: "✅ Identifier resolved",
+      email: user.email,
+      username: user.username,
+      id: user.id,
+    });
+  } catch (err) {
+    console.error("❌ Resolve identifier error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 🟢 LOGIN or REGISTER (qua Firebase)
 app.post("/auth/login", async (req, res) => {
   try {
