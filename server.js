@@ -266,34 +266,40 @@ app.post("/auth/resolve-identifier", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 // 🟢 LOGIN or REGISTER (qua Firebase)
 app.post("/auth/login", async (req, res) => {
   try {
-    const { firebaseToken } = req.body;
+    const { firebaseToken, username, fullName } = req.body; // ✅ Thêm username, fullName
     if (!firebaseToken)
       return res.status(400).json({ message: "❌ Missing Firebase token" });
 
     // ✅ Xác minh token bằng Firebase Admin SDK
     const decoded = await admin.auth().verifyIdToken(firebaseToken);
-    const { uid, email, name, picture, phone_number } = decoded;
+    const { uid, email, picture, phone_number } = decoded;
+
+    console.log("🔍 Auth decoded:", { uid, email, username, fullName });
 
     // 🔍 Tìm user trong MongoDB
     let user = await User.findOne({ id: uid });
 
     // 🟢 Nếu chưa có → tạo mới
     if (!user) {
+      console.log("📝 Creating new user:", { uid, email, username, fullName });
+
       user = new User({
         id: uid,
-        fullName: name || "No name",
-        username: email?.split("@")[0] || uid,
-        email: email || "noemail@firebase.com",
-        phone: phone_number || "",
+        fullName: fullName,
+        username: username,
+        email: email,
+        phone: phone_number,
         image: picture || undefined,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
       await user.save();
+      console.log("✅ New user created:", user);
+    } else {
+      console.log("✅ Existing user found:", user.username);
     }
 
     // 🧾 Tạo JWT riêng cho backend (hạn 7 ngày)
@@ -309,7 +315,7 @@ app.post("/auth/login", async (req, res) => {
       user,
     });
   } catch (err) {
-    console.error("Auth error:", err);
+    console.error("❌ Auth error:", err);
     res.status(500).json({ error: err.message });
   }
 });
