@@ -19,6 +19,12 @@ mongoose
   .then(() => console.log("✅ MongoDB connected to foodDelivery"))
   .catch((err) => console.log("❌ DB connection error:", err));
 
+// Kiểm tra biến môi trường JWT_SECRET
+if (!process.env.JWT_SECRET) {
+  console.error("❌ FATAL ERROR: JWT_SECRET not defined in .env");
+  process.exit(1);
+}
+
 // ============================================
 // SCHEMA & MODEL
 // ============================================
