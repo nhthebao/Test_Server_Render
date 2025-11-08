@@ -35,7 +35,7 @@ const UserSchema = new mongoose.Schema(
     fullName: { type: String, required: true },
     username: { type: String, required: true, unique: true, index: true },
     email: { type: String, required: true, unique: true, index: true },
-    phone: { type: String },
+    phone: { type: String, required: true, unique: true },
     address: { type: String },
     authProvider: { type: String, default: "firebase" },
     paymentMethod: { type: String, default: "momo" },
@@ -215,10 +215,8 @@ app.put("/users/:id", async (req, res) => {
 // ============================================
 // AUTH ROUTES
 // ============================================
-// ============================================
-// 2️⃣ ENDPOINT: Check username/email trùng khi đăng ký
-// ============================================
 
+// 🔹 Check username/email availability
 app.post("/auth/check-availability", async (req, res) => {
   try {
     const { username, email } = req.body;
@@ -232,42 +230,30 @@ app.post("/auth/check-availability", async (req, res) => {
     let available = true;
     let reason = "";
 
-    // Kiểm tra username
     if (username) {
-      const existingUsername = await User.findOne({
-        username: username.toLowerCase(),
-      });
-      if (existingUsername) {
+      const existing = await User.findOne({ username: username.toLowerCase() });
+      if (existing) {
         available = false;
         reason = "Username đã tồn tại";
       }
     }
 
-    // Kiểm tra email
     if (email && available) {
-      const existingEmail = await User.findOne({
-        email: email.toLowerCase(),
-      });
-      if (existingEmail) {
+      const existing = await User.findOne({ email: email.toLowerCase() });
+      if (existing) {
         available = false;
         reason = "Email đã tồn tại";
       }
     }
 
-    res.json({
-      available,
-      reason: reason || "✅ Available",
-    });
+    res.json({ available, reason: reason || "✅ Available" });
   } catch (err) {
     console.error("❌ Check availability error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ============================================
-// 3️⃣ ENDPOINT: Resolve identifier (FIX)
-// ============================================
-
+// 🔹 Resolve identifier (username/email/phone → email)
 app.post("/auth/resolve-identifier", async (req, res) => {
   try {
     const { username, email, phone } = req.body;
@@ -281,11 +267,13 @@ app.post("/auth/resolve-identifier", async (req, res) => {
     let user = null;
 
     if (username) {
-      // ✅ FIX: Convert lowercase trước khi tìm
+      console.log("🔍 Resolve by username:", username);
       user = await User.findOne({ username: username.toLowerCase() });
     } else if (email) {
+      console.log("🔍 Resolve by email:", email);
       user = await User.findOne({ email: email.toLowerCase() });
     } else if (phone) {
+      console.log("🔍 Resolve by phone:", phone);
       user = await User.findOne({ phone });
     }
 
@@ -296,7 +284,7 @@ app.post("/auth/resolve-identifier", async (req, res) => {
       });
     }
 
-    // ✅ Trả email + username (để client verify)
+    console.log("✅ Resolved to:", user.email);
     res.json({
       message: "✅ Identifier resolved",
       email: user.email,
@@ -309,48 +297,48 @@ app.post("/auth/resolve-identifier", async (req, res) => {
   }
 });
 
-// ============================================
-// 4️⃣ ENDPOINT: LOGIN (FIX)
-// ============================================
-
+// 🔹 LOGIN or REGISTER (Firebase token)
 app.post("/auth/login", async (req, res) => {
   try {
-    const { firebaseToken, username, fullName } = req.body;
+    const { firebaseToken, username, fullName, phone, address } = req.body;
     if (!firebaseToken)
       return res.status(400).json({ message: "❌ Missing Firebase token" });
 
-    // ✅ Xác minh token bằng Firebase Admin SDK
     const decoded = await admin.auth().verifyIdToken(firebaseToken);
     const { uid, email, picture, phone_number } = decoded;
 
-    console.log("🔍 Auth decoded:", { uid, email, username, fullName });
+    console.log("🔍 Auth decoded:", {
+      uid,
+      email,
+      username,
+      fullName,
+      phone,
+      address,
+    });
 
-    // 🔍 Tìm user theo UID (chính xác nhất)
     let user = await User.findOne({ id: uid });
 
-    // 🟢 Nếu chưa có → tạo mới
     if (!user) {
-      console.log("📝 Creating new user:", { uid, email, username, fullName });
+      console.log("📝 Creating new user");
 
-      // ✅ Normalize username & email
       const normalizedUsername = username
         ? username.toLowerCase()
         : email?.split("@")[0].toLowerCase();
       const normalizedEmail = email.toLowerCase();
 
-      // ✅ Check duplicate trước khi tạo
-      const duplicateUsername = await User.findOne({
+      // Check duplicates
+      const existingUsername = await User.findOne({
         username: normalizedUsername,
       });
-      if (duplicateUsername) {
+      if (existingUsername) {
         return res.status(409).json({
           message: "❌ Username đã tồn tại",
           code: "USERNAME_CONFLICT",
         });
       }
 
-      const duplicateEmail = await User.findOne({ email: normalizedEmail });
-      if (duplicateEmail) {
+      const existingEmail = await User.findOne({ email: normalizedEmail });
+      if (existingEmail) {
         return res.status(409).json({
           message: "❌ Email đã tồn tại",
           code: "EMAIL_CONFLICT",
@@ -362,18 +350,22 @@ app.post("/auth/login", async (req, res) => {
         fullName: fullName || "No name",
         username: normalizedUsername,
         email: normalizedEmail,
-        phone: phone_number || "",
+        phone: phone || phone_number || "",
+        address: address || "",
+        authProvider: "firebase",
+        paymentMethod: "momo",
         image: picture || undefined,
+        favorite: [],
+        cart: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
       await user.save();
-      console.log("✅ New user created:", user);
+      console.log("✅ New user created");
     } else {
-      console.log("✅ Existing user found:", user.username);
+      console.log("✅ Existing user found");
     }
 
-    // 🧾 Tạo JWT
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET,
