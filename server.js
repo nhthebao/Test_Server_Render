@@ -148,15 +148,6 @@ app.get("/", (req, res) => {
 // USER ROUTES (để đăng ký, đăng nhập qua Firebase tạm thời)
 // ============================================
 
-app.get("/users", async (req, res) => {
-  try {
-    const users = await User.find();
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.get("/users/:id", async (req, res) => {
   try {
     const user = await User.findOne({ id: req.params.id });
