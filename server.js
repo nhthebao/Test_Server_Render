@@ -437,7 +437,23 @@ app.post("/auth/password/request-reset", async (req, res) => {
     if (method === "email") {
       query.email = identifier.toLowerCase();
     } else {
-      query.phone = identifier;
+      // ✅ Chuẩn hóa phone: convert 0xxx -> +84xxx
+      let normalizedPhone = identifier.trim();
+      if (!normalizedPhone.startsWith("+")) {
+        if (normalizedPhone.startsWith("0")) {
+          normalizedPhone = "+84" + normalizedPhone.substring(1);
+        } else {
+          normalizedPhone = "+84" + normalizedPhone;
+        }
+      }
+
+      // Tìm bằng cả format gốc và format chuẩn hóa (để support cả 2 format)
+      query = {
+        $or: [
+          { phone: identifier }, // Format gốc (gì gửi lên thì tìm cái đó)
+          { phone: normalizedPhone }, // Format chuẩn hóa
+        ],
+      };
     }
 
     const user = await User.findOne(query);
@@ -580,6 +596,106 @@ app.post("/auth/password/request-reset", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ Request reset error:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+// 🔹 Verify phone OTP code
+// Only needed for PHONE method
+// Email users have token already in URL, no verification needed
+app.post("/auth/password/verify-reset-code", async (req, res) => {
+  try {
+    const { resetId, code } = req.body;
+
+    if (!resetId || !code) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ resetId và code là bắt buộc",
+      });
+    }
+
+    const session = resetSessions[resetId];
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        message: "❌ Reset session không tồn tại hoặc hết hạn",
+      });
+    }
+
+    // Check if method is phone (only phone needs verification)
+    if (session.method !== "phone") {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Verification not needed for this method",
+      });
+    }
+
+    // Check expiry
+    if (Date.now() > session.expiresAt) {
+      delete resetSessions[resetId];
+      return res.status(401).json({
+        success: false,
+        message: "❌ Reset code hết hạn. Vui lòng yêu cầu lại.",
+      });
+    }
+
+    // Check attempts
+    if (session.attempts >= 5) {
+      delete resetSessions[resetId];
+      return res.status(429).json({
+        success: false,
+        message: "❌ Quá nhiều lần thử. Vui lòng yêu cầu reset lại.",
+      });
+    }
+
+    // Verify code
+    if (code !== session.otp) {
+      session.attempts++;
+      console.warn(
+        `⚠️ OTP attempt ${session.attempts}/5 failed for ${session.phone}`
+      );
+      console.warn(`⚠️ Expected: ${session.otp}, Got: ${code}`);
+      return res.status(401).json({
+        success: false,
+        message: "❌ Mã OTP không đúng",
+        attemptsLeft: 5 - session.attempts,
+      });
+    }
+
+    // Code correct → tạo temporary token
+    console.log(`\n📱 ========== OTP VERIFIED ==========`);
+    console.log(`✅ OTP verified for phone: ${session.phone}`);
+    console.log(`✅ User ID: ${session.userId}`);
+    console.log(`✅ Email: ${session.email}`);
+    console.log(`📱 ====================================\n`);
+
+    const temporaryToken = jwt.sign(
+      {
+        userId: session.userId,
+        email: session.email,
+        purpose: "password_reset",
+        resetId,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: "15m" } // 15 minutes
+    );
+
+    session.verified = true;
+    session.temporaryToken = temporaryToken;
+
+    console.log(`✅ Phone OTP verified for ${session.phone}`);
+
+    res.json({
+      success: true,
+      message: "✅ Code verified",
+      temporaryToken,
+    });
+  } catch (err) {
+    console.error("❌ Verify reset code error:", err);
     res.status(500).json({
       success: false,
       error: err.message,
