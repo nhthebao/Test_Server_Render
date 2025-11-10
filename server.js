@@ -760,15 +760,18 @@ app.post("/auth/password/change-password", async (req, res) => {
 
     // Update Firebase password
     try {
-      await admin.auth().updateUser(decoded.userId, {
+      console.log(`🔄 Updating Firebase password for email: ${decoded.email}`);
+
+      // Get Firebase user by email
+      const firebaseUser = await admin.auth().getUserByEmail(decoded.email);
+
+      // Update password using Firebase UID
+      await admin.auth().updateUser(firebaseUser.uid, {
         password: newPassword,
       });
-      console.log(`✅ Password updated for Firebase user ${decoded.userId}`);
+      console.log(`✅ Password updated for Firebase user ${firebaseUser.uid}`);
     } catch (firebaseErr) {
-      console.warn(
-        "⚠️ Firebase update failed (user may not exist):",
-        firebaseErr
-      );
+      console.warn("⚠️ Firebase update failed:", firebaseErr.message);
       // Continue anyway - password reset still successful
     }
 
