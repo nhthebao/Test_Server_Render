@@ -460,17 +460,25 @@ app.post("/auth/password/request-reset", async (req, res) => {
         console.log(`📧 Timestamp: ${new Date().toISOString()}`);
         console.log(`📧 User email: ${user.email}`);
         console.log(`📧 User ID: ${user._id}`);
-        console.log(`📧 Calling Firebase sendPasswordResetEmail()...`);
 
-        // ✅ FIREBASE GỬI EMAIL TỰ ĐỘNG
-        // sendPasswordResetEmail() sẽ generate link + gửi email qua noreply@firebaseapp.com
-        await admin.auth().sendPasswordResetEmail(user.email);
+        // Step 1: Generate reset link from Firebase
+        console.log(`📧 Generating Firebase password reset link...`);
+        const resetLink = await admin
+          .auth()
+          .generatePasswordResetLink(user.email);
 
-        console.log(
-          `✅ Firebase sendPasswordResetEmail() called successfully!`
-        );
-        console.log(`📧 Email will be sent to: ${user.email}`);
-        console.log(`📧 From: noreply@fooddelivery-15d47.firebaseapp.com`);
+        console.log(`✅ Reset link generated`);
+        console.log(`📧 Link: ${resetLink.substring(0, 100)}...`);
+
+        // Step 2: Send email using nodemailer
+        console.log(`📧 Sending email via nodemailer...`);
+        const emailSent = await sendPasswordResetEmail(user.email, resetLink);
+
+        if (!emailSent) {
+          throw new Error("Nodemailer failed to send email");
+        }
+
+        console.log(`✅ Email sent successfully to: ${user.email}`);
         console.log(`📧 ==========================================\n`);
 
         // Lưu session để tracking
@@ -478,6 +486,7 @@ app.post("/auth/password/request-reset", async (req, res) => {
           email: user.email,
           userId: user._id,
           method: "email",
+          resetLink,
           expiresAt: Date.now() + 30 * 60 * 1000, // 30 phút
           used: false,
         };
@@ -486,8 +495,8 @@ app.post("/auth/password/request-reset", async (req, res) => {
           success: true,
           message: `✅ Email được gửi đến ${user.email}! Kiểm tra hộp thư để nhận link.`,
           resetId,
-          requiresVerification: false, // Email không cần verify, click link là được
-          expiresIn: 1800, // 30 phút
+          requiresVerification: false,
+          expiresIn: 1800,
         });
       } catch (firebaseError) {
         console.error(`\n❌ ========== FIREBASE ERROR ==========`);
@@ -495,7 +504,6 @@ app.post("/auth/password/request-reset", async (req, res) => {
         console.error(`❌ User email: ${user.email}`);
         console.error(`❌ Error message: ${firebaseError.message}`);
         console.error(`❌ Error code: ${firebaseError.code}`);
-        console.error(`❌ Error details:`, firebaseError);
         console.error(`❌ Full error:`, JSON.stringify(firebaseError, null, 2));
         console.error(`❌ =====================================\n`);
 
@@ -504,7 +512,6 @@ app.post("/auth/password/request-reset", async (req, res) => {
           message: "❌ Lỗi khi gửi email. Vui lòng thử lại sau.",
           error: firebaseError.message,
           code: firebaseError.code,
-          details: firebaseError.toString(),
         });
       }
     }
@@ -778,114 +785,103 @@ setInterval(() => {
 // EMAIL HELPER FUNCTION
 // ============================================
 
-// async function sendPasswordResetEmail(email, resetToken, resetId) {
-//   try {
-//     // ✅ CHECK EMAIL CREDENTIALS
-//     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-//       console.error(
-//         "❌ Email credentials missing:",
-//         "EMAIL_USER=" + (process.env.EMAIL_USER ? "✅" : "❌"),
-//         "EMAIL_PASSWORD=" + (process.env.EMAIL_PASSWORD ? "✅" : "❌")
-//       );
-//       throw new Error("Email credentials not configured in .env");
-//     }
+async function sendPasswordResetEmail(email, resetLink) {
+  try {
+    console.log(`📧 Setting up email transporter...`);
 
-//     console.log("📧 Email credentials found, setting up transporter...");
-//     console.log("📧 Sending from:", process.env.EMAIL_USER);
-//     console.log("📧 Sending to:", email);
+    // Check credentials
+    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+      console.error(
+        `❌ Email credentials missing: EMAIL_USER=${!!process.env
+          .EMAIL_USER}, EMAIL_PASSWORD=${!!process.env.EMAIL_PASSWORD}`
+      );
+      return false;
+    }
 
-//     // Setup transporter (dùng Gmail hoặc service khác)
-//     const transporter = nodemailer.createTransport({
-//       service: "gmail",
-//       auth: {
-//         user: process.env.EMAIL_USER_ADMIN,
-//         pass: process.env.EMAIL_PASSWORD_ADMIN,
-//       },
-//     });
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+    });
 
-//     // Tạo link reset (deep linking cho mobile app)
-//     const resetLink = `fooddelivery://reset-password?token=${encodeURIComponent(
-//       resetToken
-//     )}&resetId=${resetId}`;
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "🔐 Lấy Lại Mật Khẩu - Food Delivery App",
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: #FF6B35; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+            .content { background: #f5f5f5; padding: 20px; border-radius: 0 0 8px 8px; }
+            .button { 
+              display: inline-block; 
+              padding: 12px 30px;
+              background: #FF6B35;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .note { color: #666; font-size: 12px; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2>🔐 Lấy Lại Mật Khẩu</h2>
+            </div>
+            <div class="content">
+              <p>Xin chào,</p>
+              <p>Chúng tôi nhận được yêu cầu lấy lại mật khẩu cho tài khoản của bạn.</p>
+              
+              <p>Nhấn nút dưới để đặt mật khẩu mới:</p>
+              
+              <center>
+                <a href="${resetLink}" class="button">Lấy Lại Mật Khẩu</a>
+              </center>
+              
+              <p>Nếu nút trên không hoạt động, sao chép link này vào trình duyệt:</p>
+              <code style="background: white; padding: 10px; display: block; word-break: break-all;">
+                ${resetLink}
+              </code>
+              
+              <p class="note">
+                <strong>⏰ Lưu ý:</strong> Link lấy lại mật khẩu sẽ hết hạn trong 30 phút.
+              </p>
+              
+              <p class="note">
+                Nếu bạn không yêu cầu lấy lại mật khẩu, vui lòng bỏ qua email này. Tài khoản của bạn vẫn được bảo vệ.
+              </p>
+              
+              <hr style="margin-top: 30px;">
+              <p style="color: #999; font-size: 12px;">
+                Food Delivery App &copy; 2025 - Tất cả quyền được bảo lưu.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
 
-//     // Hoặc web link (nếu có web)
-//     const webResetLink = `https://your-website.com/reset-password?token=${encodeURIComponent(
-//       resetToken
-//     )}&resetId=${resetId}`;
-
-//     const mailOptions = {
-//       from: process.env.EMAIL_USER_ADMIN,
-//       to: email,
-//       subject: "🔐 Lấy Lại Mật Khẩu - Food Delivery App",
-//       html: `
-//         <!DOCTYPE html>
-//         <html>
-//         <head>
-//           <style>
-//             body { font-family: Arial, sans-serif; }
-//             .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-//             .header { background: #FF6B35; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
-//             .content { background: #f5f5f5; padding: 20px; border-radius: 0 0 8px 8px; }
-//             .button {
-//               display: inline-block;
-//               padding: 12px 30px;
-//               background: #FF6B35;
-//               color: white;
-//               text-decoration: none;
-//               border-radius: 8px;
-//               font-weight: bold;
-//               margin: 20px 0;
-//             }
-//             .note { color: #666; font-size: 12px; margin-top: 20px; }
-//           </style>
-//         </head>
-//         <body>
-//           <div class="container">
-//             <div class="header">
-//               <h2>🔐 Lấy Lại Mật Khẩu</h2>
-//             </div>
-//             <div class="content">
-//               <p>Xin chào,</p>
-//               <p>Chúng tôi nhận được yêu cầu lấy lại mật khẩu cho tài khoản của bạn.</p>
-
-//               <p>Nhấn nút dưới để đặt mật khẩu mới:</p>
-
-//               <center>
-//                 <a href="${resetLink}" class="button">Lấy Lại Mật Khẩu</a>
-//               </center>
-
-//               <p>Nếu nút trên không hoạt động, sao chép link này vào trình duyệt:</p>
-//               <code style="background: white; padding: 10px; display: block; word-break: break-all;">
-//                 ${resetLink}
-//               </code>
-
-//               <p class="note">
-//                 <strong>⏰ Lưu ý:</strong> Link lấy lại mật khẩu sẽ hết hạn trong 30 phút.
-//               </p>
-
-//               <p class="note">
-//                 Nếu bạn không yêu cầu lấy lại mật khẩu, vui lòng bỏ qua email này. Tài khoản của bạn vẫn được bảo vệ.
-//               </p>
-
-//               <hr style="margin-top: 30px;">
-//               <p style="color: #999; font-size: 12px;">
-//                 Food Delivery App &copy; 2025 - Tất cả quyền được bảo lưu.
-//               </p>
-//             </div>
-//           </div>
-//         </body>
-//         </html>
-//       `,
-//     };
-
-//     await transporter.sendMail(mailOptions);
-//     console.log(`✅ Email sent to ${email}`);
-//     return true;
-//   } catch (error) {
-//     console.error("❌ Send email error:", error);
-//     return false;
-//   }
-// }
+    console.log(`📧 Sending email to: ${email}`);
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent successfully to: ${email}`);
+    return true;
+  } catch (error) {
+    console.error(`❌ Email send error:`, error);
+    console.error(`❌ Error message:`, error.message);
+    console.error(`❌ Error code:`, error.code);
+    return false;
+  }
+}
 
 // =============================
 // DESSERTS CRUD
