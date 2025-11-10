@@ -456,15 +456,18 @@ app.post("/auth/password/request-reset", async (req, res) => {
     // ============================================
     if (method === "email") {
       try {
-        // FIREBASE TỰ ĐỘNG GỬI EMAIL RESET PASSWORD
+        // ✅ FIREBASE TỰ ĐỘNG GỬI EMAIL RESET PASSWORD
+        // Firebase sẽ gửi email từ: noreply@{projectId}.firebaseapp.com
+        console.log(`📧 Generating password reset link for: ${user.email}`);
+
         const resetLink = await admin
           .auth()
           .generatePasswordResetLink(user.email);
 
-        console.log(
-          `📧 Firebase password reset link generated for: ${user.email}`
-        );
-        console.log(`📧 Reset link: ${resetLink}`);
+        console.log(`✅ Firebase password reset link generated successfully!`);
+        console.log(`📧 User email: ${user.email}`);
+        console.log(`📧 Reset link domain: fooddelivery-15d47.firebaseapp.com`);
+        console.log(`📧 Link: ${resetLink}`);
 
         // Lưu session để tracking
         resetSessions[resetId] = {
@@ -510,6 +513,7 @@ app.post("/auth/password/request-reset", async (req, res) => {
 
       // ⚠️ Firebase sẽ gửi OTP tự động khi frontend gọi signInWithPhoneNumber()
       // Backend không cần gửi SMS, chỉ cần lưu session
+
       console.log(
         `📱 Phone reset requested for: ${user.phone} (${identifier})`
       );
