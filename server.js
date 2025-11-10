@@ -6,6 +6,8 @@ require("dotenv").config();
 const admin = require("./firebase");
 const jwt = require("jsonwebtoken");
 const { verifyToken } = require("./middlewares/auth");
+const nodemailer = require("nodemailer");
+const fetch = require("node-fetch");
 
 const app = express();
 app.use(express.json());
@@ -451,25 +453,30 @@ app.post("/auth/password/request-reset", async (req, res) => {
         used: false,
       };
 
-      // TODO: Send email with reset link
-      // const resetLink = `https://app.example.com/reset-password?token=${temporaryToken}&resetId=${resetId}`;
-      // await sendEmail(user.email, `
-      //   Click here to reset your password:
-      //   ${resetLink}
-      //   This link expires in 30 minutes.
-      // `);
+      // ✅ UPDATED: Thực tế gửi email
+      const emailSent = await sendPasswordResetEmail(
+        user.email,
+        temporaryToken,
+        resetId
+      );
+
+      if (!emailSent) {
+        return res.status(500).json({
+          success: false,
+          message: "❌ Không thể gửi email. Vui lòng thử lại sau vài phút.",
+        });
+      }
 
       console.log(
-        `📧 Email reset requested for: ${identifier}, token generated`
+        `📧 Email reset requested for: ${identifier}, token generated and email sent`
       );
 
       return res.json({
         success: true,
-        message: "✅ Email sent with reset link",
+        message: "✅ Email được gửi! Kiểm tra hộp thư để nhận link.",
         resetId,
         requiresVerification: false, // ✅ Email doesn't need verification
         expiresIn: 1800, // 30 minutes
-        dev_temporaryToken: temporaryToken, // DEV ONLY - Remove in production
       });
     }
 
@@ -691,6 +698,95 @@ app.post("/auth/password/change-password", async (req, res) => {
   }
 });
 
+// 🆕 🔹 Change password (Logged In User)
+// Verify mật khẩu cũ ĐÚNG trước khi update
+// Endpoint: POST /auth/password/change-logged-in
+app.post("/auth/password/change-logged-in", verifyToken, async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    console.log("🔐 Change password request for user:", userId);
+
+    if (!oldPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Phải cung cấp mật khẩu cũ và mật khẩu mới",
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Mật khẩu mới phải có ít nhất 6 ký tự",
+      });
+    }
+
+    // STEP 1: Lấy user từ DB
+    const user = await User.findOne({ id: userId });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "❌ User không tồn tại",
+      });
+    }
+
+    // STEP 2: Verify Firebase password (oldPassword)
+    // Dùng Firebase REST API để verify
+    try {
+      const response = await fetch(
+        "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" +
+          process.env.FIREBASE_API_KEY,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: user.email,
+            password: oldPassword,
+            returnSecureToken: true,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error("❌ Firebase password verify failed:", data.error);
+        return res.status(401).json({
+          success: false,
+          message: "❌ Mật khẩu cũ không chính xác",
+        });
+      }
+
+      console.log("✅ Old password verified for:", user.email);
+
+      // STEP 3: Update mật khẩu Firebase
+      await admin.auth().updateUser(userId, {
+        password: newPassword,
+      });
+
+      console.log(`✅ Password changed for user ${user.email}`);
+
+      res.json({
+        success: true,
+        message: "✅ Đổi mật khẩu thành công",
+      });
+    } catch (error) {
+      console.error("❌ Password change error:", error.message);
+      return res.status(401).json({
+        success: false,
+        message: "❌ Mật khẩu cũ không chính xác hoặc xảy ra lỗi",
+      });
+    }
+  } catch (err) {
+    console.error("❌ Change password error:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
 // ✅ Cleanup expired sessions (run every 5 minutes)
 setInterval(() => {
   const now = Date.now();
@@ -705,6 +801,105 @@ setInterval(() => {
     console.log(`🧹 Cleaned up ${cleaned} expired reset sessions`);
   }
 }, 5 * 60 * 1000);
+
+// ============================================
+// EMAIL HELPER FUNCTION
+// ============================================
+
+async function sendPasswordResetEmail(email, resetToken, resetId) {
+  try {
+    // Setup transporter (dùng Gmail hoặc service khác)
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD,
+      },
+    });
+
+    // Tạo link reset (deep linking cho mobile app)
+    const resetLink = `fooddelivery://reset-password?token=${encodeURIComponent(
+      resetToken
+    )}&resetId=${resetId}`;
+
+    // Hoặc web link (nếu có web)
+    const webResetLink = `https://your-website.com/reset-password?token=${encodeURIComponent(
+      resetToken
+    )}&resetId=${resetId}`;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: email,
+      subject: "🔐 Lấy Lại Mật Khẩu - Food Delivery App",
+      html: `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: #FF6B35; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+            .content { background: #f5f5f5; padding: 20px; border-radius: 0 0 8px 8px; }
+            .button { 
+              display: inline-block; 
+              padding: 12px 30px;
+              background: #FF6B35;
+              color: white;
+              text-decoration: none;
+              border-radius: 8px;
+              font-weight: bold;
+              margin: 20px 0;
+            }
+            .note { color: #666; font-size: 12px; margin-top: 20px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h2>🔐 Lấy Lại Mật Khẩu</h2>
+            </div>
+            <div class="content">
+              <p>Xin chào,</p>
+              <p>Chúng tôi nhận được yêu cầu lấy lại mật khẩu cho tài khoản của bạn.</p>
+              
+              <p>Nhấn nút dưới để đặt mật khẩu mới:</p>
+              
+              <center>
+                <a href="${resetLink}" class="button">Lấy Lại Mật Khẩu</a>
+              </center>
+              
+              <p>Nếu nút trên không hoạt động, sao chép link này vào trình duyệt:</p>
+              <code style="background: white; padding: 10px; display: block; word-break: break-all;">
+                ${resetLink}
+              </code>
+              
+              <p class="note">
+                <strong>⏰ Lưu ý:</strong> Link lấy lại mật khẩu sẽ hết hạn trong 30 phút.
+              </p>
+              
+              <p class="note">
+                Nếu bạn không yêu cầu lấy lại mật khẩu, vui lòng bỏ qua email này. Tài khoản của bạn vẫn được bảo vệ.
+              </p>
+              
+              <hr style="margin-top: 30px;">
+              <p style="color: #999; font-size: 12px;">
+                Food Delivery App &copy; 2025 - Tất cả quyền được bảo lưu.
+              </p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `,
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Email sent to ${email}`);
+    return true;
+  } catch (error) {
+    console.error("❌ Send email error:", error);
+    return false;
+  }
+}
 
 // =============================
 // DESSERTS CRUD
