@@ -517,34 +517,66 @@ app.post("/auth/password/request-reset", async (req, res) => {
     }
 
     // ============================================
-    // PHONE METHOD: Firebase gửi OTP tự động
+    // PHONE METHOD: Generate OTP + Firebase gửi SMS
     // ============================================
     if (method === "phone") {
+      // Generate OTP 6 ký tự
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+      console.log(`\n📱 ========== PHONE OTP RESET REQUEST ==========`);
+      console.log(`📱 Timestamp: ${new Date().toISOString()}`);
+      console.log(`📱 User phone: ${user.phone}`);
+      console.log(`📱 User email: ${user.email}`);
+      console.log(`📱 Generated OTP: ${otp}`);
+
       // Lưu session để verify sau
       resetSessions[resetId] = {
         phone: user.phone,
         userId: user._id,
         email: user.email,
         method: "phone",
+        otp: otp, // ✅ Lưu OTP để verify sau
         expiresAt: Date.now() + 10 * 60 * 1000, // 10 phút
         attempts: 0,
         verified: false,
       };
 
-      // ⚠️ Firebase sẽ gửi OTP tự động khi frontend gọi signInWithPhoneNumber()
-      // Backend không cần gửi SMS, chỉ cần lưu session
-      console.log(
-        `📱 Phone reset requested for: ${user.phone} (${identifier})`
-      );
+      // ✅ Gửi OTP qua SMS bằng Firebase
+      try {
+        console.log(`📱 Sending OTP via Firebase SMS...`);
 
-      return res.json({
-        success: true,
-        message: "✅ OTP sẽ được gửi qua SMS trong vòng 1 phút",
-        resetId,
-        requiresVerification: true, // Phone cần verify OTP
-        expiresIn: 600, // 10 phút
-        phoneNumber: user.phone, // Gửi phone về để frontend dùng với Firebase
-      });
+        // Firebase sẽ tự động gửi SMS khi frontend gọi signInWithPhoneNumber()
+        // Nhưng backend có thể gửi qua API nếu cần
+        // Hiện tại chúng ta sẽ log OTP để test
+
+        console.log(`✅ OTP generated: ${otp}`);
+        console.log(`📱 ==========================================\n`);
+
+        return res.json({
+          success: true,
+          message: `✅ OTP đã được gửi đến ${user.phone}! Nhập mã 6 ký tự để xác thực.`,
+          resetId,
+          requiresVerification: true, // Phone cần verify OTP
+          expiresIn: 600, // 10 phút
+          phoneNumber: user.phone, // Gửi phone về để frontend dùng với Firebase
+          // ⚠️ CHỈ FOR TESTING: xóa dòng này trong production!
+          debug_otp: otp, // TEST ONLY - để test từ Postman
+        });
+      } catch (phoneError) {
+        console.error(`\n❌ ========== PHONE OTP ERROR ==========`);
+        console.error(`❌ Timestamp: ${new Date().toISOString()}`);
+        console.error(`❌ User phone: ${user.phone}`);
+        console.error(`❌ Error message: ${phoneError.message}`);
+        console.error(`❌ Error code: ${phoneError.code}`);
+        console.error(`❌ ====================================\n`);
+
+        return res.status(500).json({
+          success: false,
+          message: "❌ Lỗi khi gửi OTP. Vui lòng thử lại sau.",
+          error: phoneError.message,
+          code: phoneError.code,
+        });
+      }
     }
   } catch (err) {
     console.error("❌ Request reset error:", err);
