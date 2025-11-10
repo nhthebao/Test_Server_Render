@@ -787,7 +787,7 @@ setInterval(() => {
 
 async function sendPasswordResetEmail(email, resetLink) {
   try {
-    console.log(`📧 Setting up email transporter...`);
+    console.log(`📧 [1/4] Setting up email transporter...`);
 
     // Check credentials
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
@@ -798,12 +798,17 @@ async function sendPasswordResetEmail(email, resetLink) {
       return false;
     }
 
+    console.log(`📧 [2/4] Email credentials found`);
+    console.log(`📧 From: ${process.env.EMAIL_USER}`);
+
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD,
       },
+      connectionTimeout: 5000,
+      socketTimeout: 5000,
     });
 
     const mailOptions = {
@@ -871,14 +876,20 @@ async function sendPasswordResetEmail(email, resetLink) {
       `,
     };
 
-    console.log(`📧 Sending email to: ${email}`);
+    console.log(`📧 [3/4] Sending email to: ${email}`);
+    console.log(`📧 Mail subject: ${mailOptions.subject}`);
+
     await transporter.sendMail(mailOptions);
-    console.log(`✅ Email sent successfully to: ${email}`);
+
+    console.log(`✅ [4/4] Email sent successfully to: ${email}`);
     return true;
   } catch (error) {
-    console.error(`❌ Email send error:`, error);
+    console.error(`❌ ========== EMAIL SEND ERROR ==========`);
     console.error(`❌ Error message:`, error.message);
     console.error(`❌ Error code:`, error.code);
+    console.error(`❌ Stack:`, error.stack);
+    console.error(`❌ Full error:`, JSON.stringify(error, null, 2));
+    console.error(`❌ ======================================`);
     return false;
   }
 }
