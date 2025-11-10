@@ -787,32 +787,47 @@ setInterval(() => {
 
 async function sendPasswordResetEmail(email, resetLink) {
   try {
+    console.log(`\n📧 ========== NODEMAILER SEND START ==========`);
     console.log(`📧 [1/4] Setting up email transporter...`);
 
     // Check credentials
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
+    const emailUser = process.env.EMAIL_USER;
+    const emailPass = process.env.EMAIL_PASSWORD;
+
+    console.log(`📧 EMAIL_USER from env: ${emailUser}`);
+    console.log(
+      `📧 EMAIL_PASSWORD from env: ${
+        emailPass ? "✅ EXISTS (" + emailPass.length + " chars)" : "❌ MISSING"
+      }`
+    );
+
+    if (!emailUser || !emailPass) {
       console.error(
-        `❌ Email credentials missing: EMAIL_USER=${!!process.env
-          .EMAIL_USER}, EMAIL_PASSWORD=${!!process.env.EMAIL_PASSWORD}`
+        `❌ Email credentials missing: EMAIL_USER=${!!emailUser}, EMAIL_PASSWORD=${!!emailPass}`
       );
       return false;
     }
 
     console.log(`📧 [2/4] Email credentials found`);
-    console.log(`📧 From: ${process.env.EMAIL_USER}`);
+    console.log(`📧 From: ${emailUser}`);
+    console.log(`📧 To: ${email}`);
 
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
+        user: emailUser,
+        pass: emailPass,
       },
-      connectionTimeout: 5000,
-      socketTimeout: 5000,
+      connectionTimeout: 10000,
+      socketTimeout: 10000,
     });
 
+    console.log(`📧 [2.5/4] Testing transporter connection...`);
+    await transporter.verify();
+    console.log(`✅ Transporter connection verified`);
+
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: emailUser,
       to: email,
       subject: "🔐 Lấy Lại Mật Khẩu - Food Delivery App",
       html: `
@@ -876,20 +891,26 @@ async function sendPasswordResetEmail(email, resetLink) {
       `,
     };
 
-    console.log(`📧 [3/4] Sending email to: ${email}`);
-    console.log(`📧 Mail subject: ${mailOptions.subject}`);
+    console.log(`📧 [3/4] Sending email...`);
+    console.log(`📧 Subject: ${mailOptions.subject}`);
+    console.log(`📧 To: ${mailOptions.to}`);
 
-    await transporter.sendMail(mailOptions);
+    const result = await transporter.sendMail(mailOptions);
 
-    console.log(`✅ [4/4] Email sent successfully to: ${email}`);
+    console.log(`✅ [4/4] Email sent successfully`);
+    console.log(`✅ Response ID: ${result.response}`);
+    console.log(`📧 ========== NODEMAILER SEND SUCCESS ==========\n`);
     return true;
   } catch (error) {
-    console.error(`❌ ========== EMAIL SEND ERROR ==========`);
+    console.error(`\n❌ ========== EMAIL SEND ERROR ==========`);
     console.error(`❌ Error message:`, error.message);
     console.error(`❌ Error code:`, error.code);
+    console.error(`❌ Error errno:`, error.errno);
+    console.error(`❌ Error syscall:`, error.syscall);
+    console.error(`❌ Error hostname:`, error.hostname);
     console.error(`❌ Stack:`, error.stack);
     console.error(`❌ Full error:`, JSON.stringify(error, null, 2));
-    console.error(`❌ ======================================`);
+    console.error(`❌ ======================================\n`);
     return false;
   }
 }
