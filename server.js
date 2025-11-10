@@ -460,17 +460,17 @@ app.post("/auth/password/request-reset", async (req, res) => {
         console.log(`📧 Timestamp: ${new Date().toISOString()}`);
         console.log(`📧 User email: ${user.email}`);
         console.log(`📧 User ID: ${user._id}`);
-        console.log(`📧 Calling Firebase generatePasswordResetLink()...`);
+        console.log(`📧 Calling Firebase sendPasswordResetEmail()...`);
 
-        // FIREBASE TỰ ĐỘNG GỬI EMAIL RESET PASSWORD
-        const resetLink = await admin
-          .auth()
-          .generatePasswordResetLink(user.email);
+        // ✅ FIREBASE GỬI EMAIL TỰ ĐỘNG
+        // sendPasswordResetEmail() sẽ generate link + gửi email qua noreply@firebaseapp.com
+        await admin.auth().sendPasswordResetEmail(user.email);
 
-        console.log(`✅ Firebase password reset link generated successfully!`);
-        console.log(`📧 Reset link domain: fooddelivery-15d47.firebaseapp.com`);
-        console.log(`📧 Link length: ${resetLink.length} chars`);
-        console.log(`📧 Full link: ${resetLink}`);
+        console.log(
+          `✅ Firebase sendPasswordResetEmail() called successfully!`
+        );
+        console.log(`📧 Email will be sent to: ${user.email}`);
+        console.log(`📧 From: noreply@fooddelivery-15d47.firebaseapp.com`);
         console.log(`📧 ==========================================\n`);
 
         // Lưu session để tracking
@@ -478,7 +478,6 @@ app.post("/auth/password/request-reset", async (req, res) => {
           email: user.email,
           userId: user._id,
           method: "email",
-          resetLink,
           expiresAt: Date.now() + 30 * 60 * 1000, // 30 phút
           used: false,
         };
