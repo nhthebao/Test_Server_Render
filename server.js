@@ -731,36 +731,67 @@ app.post("/auth/password/change-logged-in", verifyToken, async (req, res) => {
       });
     }
 
+    console.log("📝 User found:", user.email);
+
     // STEP 2: Verify Firebase password (oldPassword)
     // Dùng Firebase REST API để verify
     try {
-      const response = await fetch(
-        "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" +
-          process.env.FIREBASE_API_KEY,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            email: user.email,
-            password: oldPassword,
-            returnSecureToken: true,
-          }),
-        }
+      console.log("🔐 Verifying old password...");
+      console.log(
+        "📌 Firebase API Key present:",
+        !!process.env.FIREBASE_API_KEY
       );
+
+      const firebaseUrl =
+        "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=" +
+        process.env.FIREBASE_API_KEY;
+
+      console.log(
+        "📡 Firebase URL (masked):",
+        firebaseUrl.substring(0, 80) + "..."
+      );
+
+      const response = await fetch(firebaseUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: user.email,
+          password: oldPassword,
+          returnSecureToken: true,
+        }),
+      });
 
       const data = await response.json();
 
+      console.log("📬 Firebase response status:", response.status);
+      console.log("📬 Firebase response:", {
+        ok: response.ok,
+        status: response.status,
+        hasError: !!data.error,
+        errorMessage: data.error?.message || "No error",
+      });
+
+      // 🆕 Log FULL response
+      console.log("📋 Full Firebase Response:", JSON.stringify(data, null, 2));
+
       if (!response.ok) {
-        console.error("❌ Firebase password verify failed:", data.error);
+        console.error(
+          "❌ Firebase password verify failed:",
+          data.error?.message
+        );
         return res.status(401).json({
           success: false,
           message: "❌ Mật khẩu cũ không chính xác",
+          debug: {
+            firebaseError: data.error?.message,
+          },
         });
       }
 
       console.log("✅ Old password verified for:", user.email);
 
       // STEP 3: Update mật khẩu Firebase
+      console.log("🔄 Updating Firebase password...");
       await admin.auth().updateUser(userId, {
         password: newPassword,
       });
@@ -772,10 +803,19 @@ app.post("/auth/password/change-logged-in", verifyToken, async (req, res) => {
         message: "✅ Đổi mật khẩu thành công",
       });
     } catch (error) {
-      console.error("❌ Password change error:", error.message);
-      return res.status(401).json({
+      console.error("❌ Password change error:", error);
+      console.error("❌ Error details:", {
+        message: error.message,
+        code: error.code,
+        name: error.name,
+      });
+
+      return res.status(500).json({
         success: false,
-        message: "❌ Mật khẩu cũ không chính xác hoặc xảy ra lỗi",
+        message: "❌ Lỗi server khi verify mật khẩu",
+        debug: {
+          error: error.message,
+        },
       });
     }
   } catch (err) {
