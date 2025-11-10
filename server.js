@@ -7,7 +7,6 @@ const admin = require("./firebase");
 const jwt = require("jsonwebtoken");
 const { verifyToken } = require("./middlewares/auth");
 const nodemailer = require("nodemailer");
-const fetch = require("node-fetch");
 const axios = require("axios");
 
 const app = express();
@@ -151,6 +150,26 @@ app.get("/", (req, res) => {
 // ============================================
 // USER ROUTES (để đăng ký, đăng nhập qua Firebase tạm thời)
 // ============================================
+
+// 🔹 DEBUG: Lấy tất cả user và số phone của họ
+app.get("/debug/users-phone", async (req, res) => {
+  try {
+    const users = await User.find().select("username email phone fullName");
+    const formatted = users.map((u) => ({
+      username: u.username,
+      email: u.email,
+      phone: u.phone,
+      fullName: u.fullName,
+    }));
+    res.json({
+      message: "📱 Danh sách tất cả user và phone",
+      total: formatted.length,
+      users: formatted,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.get("/users/:id", async (req, res) => {
   try {
@@ -752,7 +771,6 @@ app.post("/auth/password/change-logged-in", verifyToken, async (req, res) => {
         firebaseUrl.substring(0, 80) + "..."
       );
 
-      // 🆕 Dùng axios thay vì fetch
       const response = await axios.post(firebaseUrl, {
         email: user.email,
         password: oldPassword,
