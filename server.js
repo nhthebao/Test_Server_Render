@@ -410,8 +410,8 @@ app.post("/auth/refresh-token", async (req, res) => {
 });
 
 // 🔹 Request password reset
-// For EMAIL: Generates temporary token + sends link
-// For PHONE: Generates OTP code + sends SMS
+// For EMAIL: Generates temporary token + sends link to user email
+// For PHONE: Firebase gửi OTP tự động qua SMS
 app.post("/auth/password/request-reset", async (req, res) => {
   try {
     const { method, identifier } = req.body;
@@ -430,7 +430,9 @@ app.post("/auth/password/request-reset", async (req, res) => {
       });
     }
 
-    // Tìm user
+    // ============================================
+    // TÌNG USER TỪNG DATABASE
+    // ============================================
     let query = {};
     if (method === "email") {
       query.email = identifier.toLowerCase();
@@ -448,9 +450,10 @@ app.post("/auth/password/request-reset", async (req, res) => {
     }
 
     const resetId = `reset_${Date.now()}_${Math.random().toString(36)}`;
-    const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
 
-    // ✅ EMAIL METHOD: Generate temporary token (no OTP needed)
+    // ============================================
+    // EMAIL METHOD: Gửi link qua email
+    // ============================================
     if (method === "email") {
       const temporaryToken = jwt.sign(
         {
@@ -460,22 +463,22 @@ app.post("/auth/password/request-reset", async (req, res) => {
           resetId,
         },
         process.env.JWT_SECRET,
-        { expiresIn: "30m" } // Token valid for 30 minutes
+        { expiresIn: "30m" } // Token hợp lệ 30 phút
       );
 
-      // Store session for tracking
+      // Lưu session để tracking
       resetSessions[resetId] = {
         email: user.email,
         userId: user._id,
         method: "email",
         temporaryToken,
-        expiresAt,
+        expiresAt: Date.now() + 30 * 60 * 1000, // 30 phút
         used: false,
       };
 
-      // ✅ UPDATED: Thực tế gửi email
+      // ✅ GỬI EMAIL LÀM LẬY EMAIL TỪ DATABASE
       const emailSent = await sendPasswordResetEmail(
-        user.email,
+        user.email, // ← Email từ database
         temporaryToken,
         resetId
       );
@@ -483,52 +486,52 @@ app.post("/auth/password/request-reset", async (req, res) => {
       if (!emailSent) {
         return res.status(500).json({
           success: false,
-          message: "❌ Không thể gửi email. Vui lòng thử lại sau vài phút.",
+          message: "❌ Không thể gửi email. Vui lòng thử lại sau.",
         });
       }
 
       console.log(
-        `📧 Email reset requested for: ${identifier}, token generated and email sent`
+        `📧 Password reset email sent to: ${user.email} (${identifier})`
       );
 
       return res.json({
         success: true,
-        message: "✅ Email được gửi! Kiểm tra hộp thư để nhận link.",
+        message: `✅ Email được gửi đến ${user.email}! Kiểm tra hộp thư để nhận link.`,
         resetId,
-        requiresVerification: false, // ✅ Email doesn't need verification
-        expiresIn: 1800, // 30 minutes
+        requiresVerification: false, // Email không cần verify, click link là được
+        expiresIn: 1800, // 30 phút
       });
     }
 
-    // ✅ PHONE METHOD: Generate OTP code
+    // ============================================
+    // PHONE METHOD: Firebase gửi OTP tự động
+    // ============================================
     if (method === "phone") {
-      const otp = Math.random().toString().slice(-6); // 6-digit code
-
+      // Lưu session để verify sau
       resetSessions[resetId] = {
         phone: user.phone,
         userId: user._id,
         email: user.email,
         method: "phone",
-        otp,
-        expiresAt,
+        expiresAt: Date.now() + 10 * 60 * 1000, // 10 phút
         attempts: 0,
         verified: false,
       };
 
-      // TODO: Send SMS with OTP
-      // await sendSMS(user.phone, `Your password reset code: ${otp}`);
+      // ⚠️ Firebase sẽ gửi OTP tự động khi frontend gọi signInWithPhoneNumber()
+      // Backend không cần gửi SMS, chỉ cần lưu session
 
       console.log(
-        `📱 Phone reset requested for: ${identifier}, OTP: ${otp}, expires in 10 minutes`
+        `📱 Phone reset requested for: ${user.phone} (${identifier})`
       );
 
       return res.json({
         success: true,
-        message: "✅ SMS sent with OTP code",
+        message: "✅ OTP sẽ được gửi qua SMS trong vòng 1 phút",
         resetId,
-        requiresVerification: true, // ✅ Phone needs verification
-        expiresIn: 600, // 10 minutes
-        dev_otp: otp, // DEV ONLY - Remove in production
+        requiresVerification: true, // Phone cần verify OTP
+        expiresIn: 600, // 10 phút
+        phoneNumber: user.phone, // Gửi phone về để frontend dùng với Firebase
       });
     }
   } catch (err) {
@@ -866,8 +869,8 @@ async function sendPasswordResetEmail(email, resetToken, resetId) {
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
+        user: process.env.EMAIL_USER_ADMIN,
+        pass: process.env.EMAIL_PASSWORD_ADMIN,
       },
     });
 
@@ -882,7 +885,7 @@ async function sendPasswordResetEmail(email, resetToken, resetId) {
     )}&resetId=${resetId}`;
 
     const mailOptions = {
-      from: process.env.EMAIL_USER,
+      from: process.env.EMAIL_USER_ADMIN,
       to: email,
       subject: "🔐 Lấy Lại Mật Khẩu - Food Delivery App",
       html: `
