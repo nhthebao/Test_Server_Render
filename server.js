@@ -456,18 +456,22 @@ app.post("/auth/password/request-reset", async (req, res) => {
     // ============================================
     if (method === "email") {
       try {
-        // ✅ FIREBASE TỰ ĐỘNG GỬI EMAIL RESET PASSWORD
-        // Firebase sẽ gửi email từ: noreply@{projectId}.firebaseapp.com
-        console.log(`📧 Generating password reset link for: ${user.email}`);
+        console.log(`\n📧 ========== EMAIL RESET REQUEST ==========`);
+        console.log(`📧 Timestamp: ${new Date().toISOString()}`);
+        console.log(`📧 User email: ${user.email}`);
+        console.log(`📧 User ID: ${user._id}`);
+        console.log(`📧 Calling Firebase generatePasswordResetLink()...`);
 
+        // FIREBASE TỰ ĐỘNG GỬI EMAIL RESET PASSWORD
         const resetLink = await admin
           .auth()
           .generatePasswordResetLink(user.email);
 
         console.log(`✅ Firebase password reset link generated successfully!`);
-        console.log(`📧 User email: ${user.email}`);
         console.log(`📧 Reset link domain: fooddelivery-15d47.firebaseapp.com`);
-        console.log(`📧 Link: ${resetLink}`);
+        console.log(`📧 Link length: ${resetLink.length} chars`);
+        console.log(`📧 Full link: ${resetLink}`);
+        console.log(`📧 ==========================================\n`);
 
         // Lưu session để tracking
         resetSessions[resetId] = {
@@ -487,11 +491,21 @@ app.post("/auth/password/request-reset", async (req, res) => {
           expiresIn: 1800, // 30 phút
         });
       } catch (firebaseError) {
-        console.error("❌ Firebase error:", firebaseError);
+        console.error(`\n❌ ========== FIREBASE ERROR ==========`);
+        console.error(`❌ Timestamp: ${new Date().toISOString()}`);
+        console.error(`❌ User email: ${user.email}`);
+        console.error(`❌ Error message: ${firebaseError.message}`);
+        console.error(`❌ Error code: ${firebaseError.code}`);
+        console.error(`❌ Error details:`, firebaseError);
+        console.error(`❌ Full error:`, JSON.stringify(firebaseError, null, 2));
+        console.error(`❌ =====================================\n`);
+
         return res.status(500).json({
           success: false,
           message: "❌ Lỗi khi gửi email. Vui lòng thử lại sau.",
           error: firebaseError.message,
+          code: firebaseError.code,
+          details: firebaseError.toString(),
         });
       }
     }
@@ -513,7 +527,6 @@ app.post("/auth/password/request-reset", async (req, res) => {
 
       // ⚠️ Firebase sẽ gửi OTP tự động khi frontend gọi signInWithPhoneNumber()
       // Backend không cần gửi SMS, chỉ cần lưu session
-
       console.log(
         `📱 Phone reset requested for: ${user.phone} (${identifier})`
       );
@@ -529,96 +542,6 @@ app.post("/auth/password/request-reset", async (req, res) => {
     }
   } catch (err) {
     console.error("❌ Request reset error:", err);
-    res.status(500).json({
-      success: false,
-      error: err.message,
-    });
-  }
-});
-
-// 🔹 Verify phone OTP code
-// Only needed for PHONE method
-// Email users have token already in URL, no verification needed
-app.post("/auth/password/verify-reset-code", async (req, res) => {
-  try {
-    const { resetId, code } = req.body;
-
-    if (!resetId || !code) {
-      return res.status(400).json({
-        success: false,
-        message: "❌ resetId và code là bắt buộc",
-      });
-    }
-
-    const session = resetSessions[resetId];
-
-    if (!session) {
-      return res.status(404).json({
-        success: false,
-        message: "❌ Reset session không tồn tại hoặc hết hạn",
-      });
-    }
-
-    // Check if method is phone (only phone needs verification)
-    if (session.method !== "phone") {
-      return res.status(400).json({
-        success: false,
-        message: "❌ Verification not needed for this method",
-      });
-    }
-
-    // Check expiry
-    if (Date.now() > session.expiresAt) {
-      delete resetSessions[resetId];
-      return res.status(401).json({
-        success: false,
-        message: "❌ Reset code hết hạn. Vui lòng yêu cầu lại.",
-      });
-    }
-
-    // Check attempts
-    if (session.attempts >= 5) {
-      delete resetSessions[resetId];
-      return res.status(429).json({
-        success: false,
-        message: "❌ Quá nhiều lần thử. Vui lòng yêu cầu reset lại.",
-      });
-    }
-
-    // Verify code
-    if (code !== session.otp) {
-      session.attempts++;
-      return res.status(401).json({
-        success: false,
-        message: "❌ Mã OTP không đúng",
-        attemptsLeft: 5 - session.attempts,
-      });
-    }
-
-    // Code correct → tạo temporary token
-    const temporaryToken = jwt.sign(
-      {
-        userId: session.userId,
-        email: session.email,
-        purpose: "password_reset",
-        resetId,
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: "15m" } // 15 minutes
-    );
-
-    session.verified = true;
-    session.temporaryToken = temporaryToken;
-
-    console.log(`✅ Phone OTP verified for ${session.phone}`);
-
-    res.json({
-      success: true,
-      message: "✅ Code verified",
-      temporaryToken,
-    });
-  } catch (err) {
-    console.error("❌ Verify reset code error:", err);
     res.status(500).json({
       success: false,
       error: err.message,
