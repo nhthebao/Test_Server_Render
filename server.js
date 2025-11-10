@@ -8,6 +8,7 @@ const jwt = require("jsonwebtoken");
 const { verifyToken } = require("./middlewares/auth");
 const nodemailer = require("nodemailer");
 const fetch = require("node-fetch");
+const axios = require("axios");
 
 const app = express();
 app.use(express.json());
@@ -751,21 +752,18 @@ app.post("/auth/password/change-logged-in", verifyToken, async (req, res) => {
         firebaseUrl.substring(0, 80) + "..."
       );
 
-      const response = await fetch(firebaseUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: user.email,
-          password: oldPassword,
-          returnSecureToken: true,
-        }),
+      // 🆕 Dùng axios thay vì fetch
+      const response = await axios.post(firebaseUrl, {
+        email: user.email,
+        password: oldPassword,
+        returnSecureToken: true,
       });
 
-      const data = await response.json();
+      const data = response.data;
 
       console.log("📬 Firebase response status:", response.status);
       console.log("📬 Firebase response:", {
-        ok: response.ok,
+        ok: response.status === 200,
         status: response.status,
         hasError: !!data.error,
         errorMessage: data.error?.message || "No error",
@@ -773,20 +771,6 @@ app.post("/auth/password/change-logged-in", verifyToken, async (req, res) => {
 
       // 🆕 Log FULL response
       console.log("📋 Full Firebase Response:", JSON.stringify(data, null, 2));
-
-      if (!response.ok) {
-        console.error(
-          "❌ Firebase password verify failed:",
-          data.error?.message
-        );
-        return res.status(401).json({
-          success: false,
-          message: "❌ Mật khẩu cũ không chính xác",
-          debug: {
-            firebaseError: data.error?.message,
-          },
-        });
-      }
 
       console.log("✅ Old password verified for:", user.email);
 
@@ -808,7 +792,19 @@ app.post("/auth/password/change-logged-in", verifyToken, async (req, res) => {
         message: error.message,
         code: error.code,
         name: error.name,
+        response: error.response?.data,
       });
+
+      if (error.response?.status === 400) {
+        const firebaseError = error.response.data?.error?.message;
+        return res.status(401).json({
+          success: false,
+          message: "❌ Mật khẩu cũ không chính xác",
+          debug: {
+            firebaseError,
+          },
+        });
+      }
 
       return res.status(500).json({
         success: false,
