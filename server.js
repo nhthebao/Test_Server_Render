@@ -6,7 +6,7 @@ require("dotenv").config();
 const admin = require("./firebase");
 const jwt = require("jsonwebtoken");
 const { verifyToken } = require("./middlewares/auth");
-const nodemailer = require("nodemailer");
+const sgMail = require("@sendgrid/mail");
 const axios = require("axios");
 
 const app = express();
@@ -951,117 +951,28 @@ setInterval(() => {
 // ============================================
 // EMAIL HELPER FUNCTION
 // ============================================
-
-async function sendPasswordResetEmail(email, resetLink) {
+// ============================================
+// 📧 SENDGRID EMAIL FUNCTION (Primary)
+// ============================================
+async function sendPasswordResetEmailSendGrid(email, resetLink) {
   try {
-    console.log(`\n📧 ========== NODEMAILER SEND START ==========`);
-    console.log(`📧 [1/4] Setting up email transporter...`);
+    console.log(`\n📧 ========== SENDGRID SEND START ==========`);
+    console.log(`📧 [1/3] Checking SendGrid API Key...`);
 
-    // Check credentials
-    const emailUser = process.env.EMAIL_USER;
-    const emailPass = process.env.EMAIL_PASSWORD;
-
-    console.log(`📧 EMAIL_USER from env: ${emailUser}`);
-    console.log(
-      `📧 EMAIL_PASSWORD from env: ${
-        emailPass ? "✅ EXISTS (" + emailPass.length + " chars)" : "❌ MISSING"
-      }`
-    );
-
-    if (!emailUser || !emailPass) {
-      console.error(
-        `❌ Email credentials missing: EMAIL_USER=${!!emailUser}, EMAIL_PASSWORD=${!!emailPass}`
-      );
+    const apiKey = process.env.SENDGRID_API_KEY;
+    if (!apiKey) {
+      console.error(`❌ SENDGRID_API_KEY not found in environment`);
       return false;
     }
 
-    console.log(`📧 [2/4] Email credentials found`);
-    console.log(`📧 From: ${emailUser}`);
-    console.log(`📧 To: ${email}`);
+    console.log(`✅ SendGrid API Key found`);
+    console.log(`📧 [2/3] Preparing email...`);
 
-    // 🔧 Try multiple SMTP configurations (fallback mechanism)
-    const smtpConfigs = [
-      {
-        name: "Gmail SMTP (Port 465 - SSL)",
-        config: {
-          host: "smtp.gmail.com",
-          port: 465,
-          secure: true, // use SSL
-          auth: {
-            user: emailUser,
-            pass: emailPass,
-          },
-          connectionTimeout: 20000,
-          greetingTimeout: 15000,
-          socketTimeout: 20000,
-        },
-      },
-      {
-        name: "Gmail SMTP (Port 587 - TLS)",
-        config: {
-          host: "smtp.gmail.com",
-          port: 587,
-          secure: false, // use STARTTLS
-          auth: {
-            user: emailUser,
-            pass: emailPass,
-          },
-          connectionTimeout: 20000,
-          greetingTimeout: 15000,
-          socketTimeout: 20000,
-        },
-      },
-      {
-        name: "Gmail Service (Default)",
-        config: {
-          service: "gmail",
-          auth: {
-            user: emailUser,
-            pass: emailPass,
-          },
-          connectionTimeout: 20000,
-          greetingTimeout: 15000,
-          socketTimeout: 20000,
-        },
-      },
-    ];
+    sgMail.setApiKey(apiKey);
 
-    let transporter = null;
-    let lastError = null;
-
-    console.log(`📧 [2.5/4] Testing transporter connection...`);
-
-    // Try each config until one works
-    for (const { name, config } of smtpConfigs) {
-      try {
-        console.log(`📧 Trying: ${name}...`);
-        transporter = nodemailer.createTransport(config);
-        await transporter.verify();
-        console.log(`✅ Transporter connection verified with: ${name}`);
-        break; // Success! Stop trying
-      } catch (verifyError) {
-        console.error(`❌ ${name} failed: ${verifyError.message}`);
-        lastError = verifyError;
-        transporter = null; // Reset for next attempt
-      }
-    }
-
-    // If all configs failed
-    if (!transporter) {
-      console.error(`❌ All SMTP configurations failed!`);
-      console.error(`💡 Last error: ${lastError.message}`);
-      console.error(`💡 This usually means:`);
-      console.error(`   1. Gmail is blocking Render's IP addresses`);
-      console.error(`   2. Firewall/network restrictions`);
-      console.error(
-        `   3. Need to use dedicated email service (SendGrid, Mailgun, etc.)`
-      );
-      throw lastError;
-    }
-
-    const mailOptions = {
-      from: emailUser,
+    const msg = {
       to: email,
+      from: process.env.EMAIL_USER || "gobitefood@gmail.com", // Must be verified sender
       subject: "🔐 Lấy Lại Mật Khẩu - Food Delivery App",
       html: `
         <!DOCTYPE html>
@@ -1110,7 +1021,7 @@ async function sendPasswordResetEmail(email, resetLink) {
               </p>
               
               <p class="note">
-                Nếu bạn không yêu cầu lấy lại mật khẩu, vui lòng bỏ qua email này. Tài khoản của bạn vẫn được bảo vệ.
+                Nếu bạn không yêu cầu lấy lại mật khẩu, vui lòng bỏ qua email này.
               </p>
               
               <hr style="margin-top: 30px;">
@@ -1124,44 +1035,48 @@ async function sendPasswordResetEmail(email, resetLink) {
       `,
     };
 
-    console.log(`📧 [3/4] Sending email...`);
-    console.log(`📧 From: ${mailOptions.from}`);
-    console.log(`📧 To: ${mailOptions.to}`);
-    console.log(`📧 Subject: ${mailOptions.subject}`);
+    console.log(`📧 From: ${msg.from}`);
+    console.log(`📧 To: ${msg.to}`);
+    console.log(`📧 Subject: ${msg.subject}`);
+    console.log(`📧 [3/3] Sending email via SendGrid...`);
 
-    const result = await transporter.sendMail(mailOptions);
+    const result = await sgMail.send(msg);
 
-    console.log(`✅ [4/4] Email sent successfully`);
-    console.log(`✅ Message ID: ${result.messageId}`);
-    console.log(`✅ Response: ${result.response}`);
-    console.log(`✅ Accepted: ${result.accepted?.join(", ") || "N/A"}`);
-    console.log(
-      `✅ Rejected: ${
-        result.rejected?.length > 0 ? result.rejected.join(", ") : "None"
-      }`
-    );
-    console.log(`📧 ========== NODEMAILER SEND SUCCESS ==========\n`);
-
-    // Check if email was actually accepted
-    if (result.rejected && result.rejected.length > 0) {
-      console.error(`⚠️ WARNING: Email was rejected by server!`);
-      console.error(`⚠️ Rejected addresses: ${result.rejected.join(", ")}`);
-      return false;
-    }
+    console.log(`✅ Email sent successfully via SendGrid!`);
+    console.log(`✅ Status Code: ${result[0].statusCode}`);
+    console.log(`✅ Response: ${JSON.stringify(result[0].headers)}`);
+    console.log(`📧 ========== SENDGRID SEND SUCCESS ==========\n`);
 
     return true;
   } catch (error) {
-    console.error(`\n❌ ========== EMAIL SEND ERROR ==========`);
+    console.error(`\n❌ ========== SENDGRID ERROR ==========`);
     console.error(`❌ Error message:`, error.message);
     console.error(`❌ Error code:`, error.code);
-    console.error(`❌ Error errno:`, error.errno);
-    console.error(`❌ Error syscall:`, error.syscall);
-    console.error(`❌ Error hostname:`, error.hostname);
-    console.error(`❌ Stack:`, error.stack);
+    if (error.response) {
+      console.error(`❌ Response status:`, error.response.statusCode);
+      console.error(`❌ Response body:`, error.response.body);
+    }
     console.error(`❌ Full error:`, JSON.stringify(error, null, 2));
-    console.error(`❌ ======================================\n`);
+    console.error(`❌ ====================================\n`);
     return false;
   }
+}
+
+// ============================================
+// 📧 MAIN EMAIL FUNCTION - Uses SendGrid
+// ============================================
+async function sendPasswordResetEmail(email, resetLink) {
+  // ✅ Use SendGrid for email sending
+  if (!process.env.SENDGRID_API_KEY) {
+    console.error(`❌ SENDGRID_API_KEY not found in environment!`);
+    console.error(
+      `💡 Please add SENDGRID_API_KEY to your .env file or Render Environment Variables`
+    );
+    return false;
+  }
+
+  console.log(`📧 Sending email via SendGrid...`);
+  return await sendPasswordResetEmailSendGrid(email, resetLink);
 }
 
 // ============================================
