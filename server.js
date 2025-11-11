@@ -28,6 +28,22 @@ if (!process.env.JWT_SECRET) {
   process.exit(1);
 }
 
+// ✅ Kiểm tra biến môi trường EMAIL
+console.log("\n🔍 ========== EMAIL CONFIG CHECK ==========");
+console.log(
+  `EMAIL_USER: ${
+    process.env.EMAIL_USER ? "✅ " + process.env.EMAIL_USER : "❌ MISSING"
+  }`
+);
+console.log(
+  `EMAIL_PASSWORD: ${
+    process.env.EMAIL_PASSWORD
+      ? "✅ EXISTS (" + process.env.EMAIL_PASSWORD.length + " chars)"
+      : "❌ MISSING"
+  }`
+);
+console.log("🔍 ==========================================\n");
+
 // ============================================
 // SCHEMA & MODEL
 // ============================================
@@ -969,13 +985,25 @@ async function sendPasswordResetEmail(email, resetLink) {
         user: emailUser,
         pass: emailPass,
       },
-      connectionTimeout: 10000,
-      socketTimeout: 10000,
+      connectionTimeout: 15000, // Tăng timeout lên 15s
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      pool: true, // Use connection pooling
+      maxConnections: 5,
+      maxMessages: 10,
     });
 
     console.log(`📧 [2.5/4] Testing transporter connection...`);
-    await transporter.verify();
-    console.log(`✅ Transporter connection verified`);
+    try {
+      await transporter.verify();
+      console.log(`✅ Transporter connection verified`);
+    } catch (verifyError) {
+      console.error(`❌ Transporter verification failed:`, verifyError.message);
+      console.error(
+        `💡 This usually means: Wrong email/password, or Gmail blocking access`
+      );
+      throw verifyError;
+    }
 
     const mailOptions = {
       from: emailUser,
@@ -1043,14 +1071,30 @@ async function sendPasswordResetEmail(email, resetLink) {
     };
 
     console.log(`📧 [3/4] Sending email...`);
-    console.log(`📧 Subject: ${mailOptions.subject}`);
+    console.log(`📧 From: ${mailOptions.from}`);
     console.log(`📧 To: ${mailOptions.to}`);
+    console.log(`📧 Subject: ${mailOptions.subject}`);
 
     const result = await transporter.sendMail(mailOptions);
 
     console.log(`✅ [4/4] Email sent successfully`);
-    console.log(`✅ Response ID: ${result.response}`);
+    console.log(`✅ Message ID: ${result.messageId}`);
+    console.log(`✅ Response: ${result.response}`);
+    console.log(`✅ Accepted: ${result.accepted?.join(", ") || "N/A"}`);
+    console.log(
+      `✅ Rejected: ${
+        result.rejected?.length > 0 ? result.rejected.join(", ") : "None"
+      }`
+    );
     console.log(`📧 ========== NODEMAILER SEND SUCCESS ==========\n`);
+
+    // Check if email was actually accepted
+    if (result.rejected && result.rejected.length > 0) {
+      console.error(`⚠️ WARNING: Email was rejected by server!`);
+      console.error(`⚠️ Rejected addresses: ${result.rejected.join(", ")}`);
+      return false;
+    }
+
     return true;
   } catch (error) {
     console.error(`\n❌ ========== EMAIL SEND ERROR ==========`);
@@ -1065,6 +1109,55 @@ async function sendPasswordResetEmail(email, resetLink) {
     return false;
   }
 }
+
+// ============================================
+// 🧪 TEST ENDPOINT: Test Email Sending
+// ============================================
+app.post("/test/email", async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Email is required",
+      });
+    }
+
+    console.log(`\n🧪 ========== TEST EMAIL ENDPOINT ==========`);
+    console.log(`🧪 Testing email to: ${email}`);
+    console.log(`🧪 Timestamp: ${new Date().toISOString()}`);
+
+    // Test with a fake reset link
+    const testResetLink = "https://example.com/reset-password?token=test123";
+
+    const emailSent = await sendPasswordResetEmail(email, testResetLink);
+
+    if (emailSent) {
+      console.log(`✅ Test email sent successfully!`);
+      console.log(`🧪 =========================================\n`);
+      return res.json({
+        success: true,
+        message: `✅ Test email sent to ${email}! Check inbox.`,
+        timestamp: new Date().toISOString(),
+      });
+    } else {
+      console.error(`❌ Test email failed!`);
+      console.log(`🧪 =========================================\n`);
+      return res.status(500).json({
+        success: false,
+        message: "❌ Failed to send test email. Check server logs.",
+        timestamp: new Date().toISOString(),
+      });
+    }
+  } catch (error) {
+    console.error(`❌ Test email error:`, error);
+    return res.status(500).json({
+      success: false,
+      message: "❌ Error: " + error.message,
+    });
+  }
+});
 
 // =============================
 // DESSERTS CRUD
