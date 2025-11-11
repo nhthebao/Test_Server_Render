@@ -949,7 +949,7 @@ setInterval(() => {
 }, 5 * 60 * 1000);
 
 // ============================================
-// EMAIL HELPER FUNCTION
+// EMAIL HELPER FUNCTION - SEND PASSWORD RESET
 // ============================================
 // ============================================
 // 📧 SENDGRID EMAIL FUNCTION (Primary)
@@ -1078,55 +1078,6 @@ async function sendPasswordResetEmail(email, resetLink) {
   console.log(`📧 Sending email via SendGrid...`);
   return await sendPasswordResetEmailSendGrid(email, resetLink);
 }
-
-// ============================================
-// 🧪 TEST ENDPOINT: Test Email Sending
-// ============================================
-app.post("/test/email", async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return res.status(400).json({
-        success: false,
-        message: "❌ Email is required",
-      });
-    }
-
-    console.log(`\n🧪 ========== TEST EMAIL ENDPOINT ==========`);
-    console.log(`🧪 Testing email to: ${email}`);
-    console.log(`🧪 Timestamp: ${new Date().toISOString()}`);
-
-    // Test with a fake reset link
-    const testResetLink = "https://example.com/reset-password?token=test123";
-
-    const emailSent = await sendPasswordResetEmail(email, testResetLink);
-
-    if (emailSent) {
-      console.log(`✅ Test email sent successfully!`);
-      console.log(`🧪 =========================================\n`);
-      return res.json({
-        success: true,
-        message: `✅ Test email sent to ${email}! Check inbox.`,
-        timestamp: new Date().toISOString(),
-      });
-    } else {
-      console.error(`❌ Test email failed!`);
-      console.log(`🧪 =========================================\n`);
-      return res.status(500).json({
-        success: false,
-        message: "❌ Failed to send test email. Check server logs.",
-        timestamp: new Date().toISOString(),
-      });
-    }
-  } catch (error) {
-    console.error(`❌ Test email error:`, error);
-    return res.status(500).json({
-      success: false,
-      message: "❌ Error: " + error.message,
-    });
-  }
-});
 
 // =============================
 // DESSERTS CRUD
