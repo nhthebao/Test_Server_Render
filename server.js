@@ -443,36 +443,93 @@ app.put("/users/:id", async (req, res) => {
 // AUTH ROUTES
 // ============================================
 
-// 🟢 LOGIN or REGISTER (qua Firebase)
+// 🔹 LOGIN or REGISTER (Firebase token)
 app.post("/auth/login", async (req, res) => {
   try {
-    const { firebaseToken } = req.body;
+    const { firebaseToken, username, fullName, phone, address } = req.body;
     if (!firebaseToken)
       return res.status(400).json({ message: "❌ Missing Firebase token" });
 
-    // ✅ Xác minh token bằng Firebase Admin SDK
     const decoded = await admin.auth().verifyIdToken(firebaseToken);
-    const { uid, email, name, picture, phone_number } = decoded;
+    const { uid, email, picture, phone_number } = decoded;
 
-    // 🔍 Tìm user trong MongoDB
+    console.log("🔍 Auth decoded:", {
+      uid,
+      email,
+      username,
+      fullName,
+      phone,
+      address,
+    });
+
     let user = await User.findOne({ id: uid });
 
-    // 🟢 Nếu chưa có → tạo mới
     if (!user) {
+      console.log("📝 Creating new user");
+
+      const normalizedUsername = username
+        ? username.toLowerCase()
+        : email?.split("@")[0].toLowerCase();
+      const normalizedEmail = email.toLowerCase();
+
+      // Check duplicates
+      const existingUsername = await User.findOne({
+        username: normalizedUsername,
+      });
+      if (existingUsername) {
+        return res.status(409).json({
+          message: "❌ Username đã tồn tại",
+          code: "USERNAME_CONFLICT",
+        });
+      }
+
+      const existingEmail = await User.findOne({ email: normalizedEmail });
+      if (existingEmail) {
+        return res.status(409).json({
+          message: "❌ Email đã tồn tại",
+          code: "EMAIL_CONFLICT",
+        });
+      }
+
+      // ✅ Xử lý fullName và phone từ request body (đăng ký) hoặc Firebase
+      const finalFullName =
+        fullName && fullName.trim() ? fullName.trim() : "No name";
+      const finalPhone =
+        phone && phone.trim() ? phone.trim() : phone_number || "";
+
+      console.log(`📝 Creating user with:`, {
+        fullName: finalFullName,
+        phone: finalPhone,
+        username: normalizedUsername,
+        email: normalizedEmail,
+      });
+
       user = new User({
         id: uid,
-        fullName: name || "No name",
-        username: email?.split("@")[0] || uid,
-        email: email || "noemail@firebase.com",
-        phone: phone_number || "",
+        fullName: finalFullName,
+        username: normalizedUsername,
+        email: normalizedEmail,
+        phone: finalPhone,
+        address: address || "",
+        authProvider: "firebase",
+        paymentMethod: "momo",
         image: picture || undefined,
+        favorite: [],
+        cart: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
       await user.save();
+      console.log("✅ New user created:", {
+        username: user.username,
+        fullName: user.fullName,
+        phone: user.phone,
+        email: user.email,
+      });
+    } else {
+      console.log("✅ Existing user found");
     }
 
-    // 🧾 Tạo JWT riêng cho backend (hạn 7 ngày)
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET,
@@ -485,7 +542,7 @@ app.post("/auth/login", async (req, res) => {
       user,
     });
   } catch (err) {
-    console.error("Auth error:", err);
+    console.error("❌ Auth error:", err);
     res.status(500).json({ error: err.message });
   }
 });
