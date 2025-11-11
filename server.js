@@ -1008,7 +1008,7 @@ async function sendPasswordResetEmailSendGrid(email, resetLink) {
               <p>Nhấn nút dưới để đặt mật khẩu mới:</p>
               
               <center>
-                <a href="${resetLink}" class="button">Lấy Lại Mật Khẩu</a>
+                <a href="${resetLink}" class="button" style="color: white">Lấy Lại Mật Khẩu</a>
               </center>
               
               <p>Nếu nút trên không hoạt động, sao chép link này vào trình duyệt:</p>
