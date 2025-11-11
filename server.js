@@ -148,10 +148,21 @@ app.get("/", (req, res) => {
 // USER ROUTES (để đăng ký, đăng nhập qua Firebase tạm thời)
 // ============================================
 
-app.get("/users", async (req, res) => {
+// 🔹 DEBUG: Lấy tất cả user và số phone của họ
+app.get("/debug/users-phone", async (req, res) => {
   try {
-    const users = await User.find();
-    res.json(users);
+    const users = await User.find().select("username email phone fullName");
+    const formatted = users.map((u) => ({
+      username: u.username,
+      email: u.email,
+      phone: u.phone,
+      fullName: u.fullName,
+    }));
+    res.json({
+      message: "📱 Danh sách tất cả user và phone",
+      total: formatted.length,
+      users: formatted,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -201,6 +212,70 @@ app.get("/debug/check-username/:username", async (req, res) => {
     });
   } catch (err) {
     console.error(`❌ Error checking username:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 DEBUG: Tìm và xóa các user duplicates
+app.get("/debug/find-duplicates", async (req, res) => {
+  try {
+    console.log(`\n🔍 ========== FINDING DUPLICATES ==========`);
+
+    const allUsers = await User.find().select(
+      "username email phone fullName id"
+    );
+
+    // Tìm username duplicates
+    const usernameMap = {};
+    const emailMap = {};
+
+    allUsers.forEach((u) => {
+      const normalizedUsername = u.username.toLowerCase();
+      const normalizedEmail = u.email.toLowerCase();
+
+      if (!usernameMap[normalizedUsername]) {
+        usernameMap[normalizedUsername] = [];
+      }
+      usernameMap[normalizedUsername].push(u);
+
+      if (!emailMap[normalizedEmail]) {
+        emailMap[normalizedEmail] = [];
+      }
+      emailMap[normalizedEmail].push(u);
+    });
+
+    // Tìm duplicates
+    const usernameDuplicates = Object.entries(usernameMap).filter(
+      ([_, users]) => users.length > 1
+    );
+    const emailDuplicates = Object.entries(emailMap).filter(
+      ([_, users]) => users.length > 1
+    );
+
+    console.log(`Found ${usernameDuplicates.length} username duplicates`);
+    console.log(`Found ${emailDuplicates.length} email duplicates`);
+    console.log(`🔍 ==========================================\n`);
+
+    res.json({
+      message: "🔍 Duplicate check complete",
+      totalUsers: allUsers.length,
+      usernameDuplicates: usernameDuplicates.map(([username, users]) => ({
+        username,
+        count: users.length,
+        users: users.map((u) => ({ email: u.email, phone: u.phone, id: u.id })),
+      })),
+      emailDuplicates: emailDuplicates.map(([email, users]) => ({
+        email,
+        count: users.length,
+        users: users.map((u) => ({
+          username: u.username,
+          phone: u.phone,
+          id: u.id,
+        })),
+      })),
+    });
+  } catch (err) {
+    console.error(`❌ Error finding duplicates:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -286,12 +361,42 @@ app.get("/users", async (req, res) => {
     const { email, username } = req.query;
     let query = {};
 
-    if (email) query.email = email;
-    if (username) query.username = username;
+    // ✅ Normalize email và username để query case-insensitive
+    if (email) {
+      const normalizedEmail = email.toLowerCase().trim();
+      query.email = normalizedEmail;
+      console.log(`🔍 [GET /users] Query by email: "${normalizedEmail}"`);
+    }
+    if (username) {
+      const normalizedUsername = username.toLowerCase().trim();
+      query.username = normalizedUsername;
+      console.log(`🔍 [GET /users] Query by username: "${normalizedUsername}"`);
+    }
 
     const users = await User.find(query);
+    console.log(`📊 [GET /users] Found ${users.length} user(s)`);
+
+    // ✅ Log thông tin user tìm thấy để debug
+    if (users.length > 0) {
+      users.forEach((u, idx) => {
+        console.log(
+          `  ${idx + 1}. username: "${u.username}", email: "${
+            u.email
+          }", phone: "${u.phone}"`
+        );
+      });
+    }
+
+    // ⚠️ Cảnh báo nếu tìm thấy nhiều users (không nên xảy ra do unique constraint)
+    if (users.length > 1) {
+      console.warn(
+        `⚠️ WARNING: Found ${users.length} users with same query! This should not happen!`
+      );
+    }
+
     res.json(users);
   } catch (err) {
+    console.error(`❌ [GET /users] Error:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });
