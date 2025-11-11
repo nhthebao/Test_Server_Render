@@ -979,30 +979,84 @@ async function sendPasswordResetEmail(email, resetLink) {
     console.log(`📧 From: ${emailUser}`);
     console.log(`📧 To: ${email}`);
 
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        user: emailUser,
-        pass: emailPass,
+    // 🔧 Try multiple SMTP configurations (fallback mechanism)
+    const smtpConfigs = [
+      {
+        name: "Gmail SMTP (Port 465 - SSL)",
+        config: {
+          host: "smtp.gmail.com",
+          port: 465,
+          secure: true, // use SSL
+          auth: {
+            user: emailUser,
+            pass: emailPass,
+          },
+          connectionTimeout: 20000,
+          greetingTimeout: 15000,
+          socketTimeout: 20000,
+        },
       },
-      connectionTimeout: 15000, // Tăng timeout lên 15s
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-      pool: true, // Use connection pooling
-      maxConnections: 5,
-      maxMessages: 10,
-    });
+      {
+        name: "Gmail SMTP (Port 587 - TLS)",
+        config: {
+          host: "smtp.gmail.com",
+          port: 587,
+          secure: false, // use STARTTLS
+          auth: {
+            user: emailUser,
+            pass: emailPass,
+          },
+          connectionTimeout: 20000,
+          greetingTimeout: 15000,
+          socketTimeout: 20000,
+        },
+      },
+      {
+        name: "Gmail Service (Default)",
+        config: {
+          service: "gmail",
+          auth: {
+            user: emailUser,
+            pass: emailPass,
+          },
+          connectionTimeout: 20000,
+          greetingTimeout: 15000,
+          socketTimeout: 20000,
+        },
+      },
+    ];
+
+    let transporter = null;
+    let lastError = null;
 
     console.log(`📧 [2.5/4] Testing transporter connection...`);
-    try {
-      await transporter.verify();
-      console.log(`✅ Transporter connection verified`);
-    } catch (verifyError) {
-      console.error(`❌ Transporter verification failed:`, verifyError.message);
+
+    // Try each config until one works
+    for (const { name, config } of smtpConfigs) {
+      try {
+        console.log(`📧 Trying: ${name}...`);
+        transporter = nodemailer.createTransport(config);
+        await transporter.verify();
+        console.log(`✅ Transporter connection verified with: ${name}`);
+        break; // Success! Stop trying
+      } catch (verifyError) {
+        console.error(`❌ ${name} failed: ${verifyError.message}`);
+        lastError = verifyError;
+        transporter = null; // Reset for next attempt
+      }
+    }
+
+    // If all configs failed
+    if (!transporter) {
+      console.error(`❌ All SMTP configurations failed!`);
+      console.error(`💡 Last error: ${lastError.message}`);
+      console.error(`💡 This usually means:`);
+      console.error(`   1. Gmail is blocking Render's IP addresses`);
+      console.error(`   2. Firewall/network restrictions`);
       console.error(
-        `💡 This usually means: Wrong email/password, or Gmail blocking access`
+        `   3. Need to use dedicated email service (SendGrid, Mailgun, etc.)`
       );
-      throw verifyError;
+      throw lastError;
     }
 
     const mailOptions = {
