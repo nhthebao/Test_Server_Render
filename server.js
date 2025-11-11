@@ -157,6 +157,119 @@ app.get("/users", async (req, res) => {
   }
 });
 
+// 🔹 DEBUG: Tìm user duplicates và search by username
+app.get("/debug/check-username/:username", async (req, res) => {
+  try {
+    const { username } = req.params;
+    const normalizedUsername = username.toLowerCase().trim();
+
+    console.log(`\n🔍 ========== DEBUG CHECK USERNAME ==========`);
+    console.log(`Input: "${username}"`);
+    console.log(`Normalized: "${normalizedUsername}"`);
+
+    // Tìm tất cả users có username giống nhau (case-insensitive)
+    const users = await User.find().select("username email phone fullName id");
+    const matchingUsers = users.filter(
+      (u) => u.username.toLowerCase() === normalizedUsername
+    );
+
+    console.log(`Found ${matchingUsers.length} matching user(s)`);
+    matchingUsers.forEach((u, idx) => {
+      console.log(
+        `  ${idx + 1}. username: "${u.username}", email: "${
+          u.email
+        }", phone: "${u.phone}"`
+      );
+    });
+    console.log(`🔍 ==========================================\n`);
+
+    res.json({
+      message: `🔍 Check username: ${username}`,
+      normalized: normalizedUsername,
+      totalMatching: matchingUsers.length,
+      users: matchingUsers.map((u) => ({
+        username: u.username,
+        email: u.email,
+        phone: u.phone,
+        fullName: u.fullName,
+        id: u.id,
+      })),
+      allUsers: users.map((u) => ({
+        username: u.username,
+        email: u.email,
+      })),
+    });
+  } catch (err) {
+    console.error(`❌ Error checking username:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 DEBUG: Xóa user bằng username và email để xóa đúng user
+app.delete("/debug/delete-user", async (req, res) => {
+  try {
+    const { username, email } = req.query;
+
+    if (!username || !email) {
+      return res.status(400).json({
+        success: false,
+        message: "❌ Cần cung cấp cả username và email để xóa",
+      });
+    }
+
+    const normalizedUsername = username.toLowerCase().trim();
+    const normalizedEmail = email.toLowerCase().trim();
+
+    console.log(`\n🗑️ ========== DELETE USER ==========`);
+    console.log(`Username: "${normalizedUsername}"`);
+    console.log(`Email: "${normalizedEmail}"`);
+
+    // Tìm user với cả username và email để đảm bảo xóa đúng
+    const user = await User.findOne({
+      username: normalizedUsername,
+      email: normalizedEmail,
+    });
+
+    if (!user) {
+      console.log(`❌ User không tồn tại`);
+      console.log(`🗑️ ==================================\n`);
+      return res.status(404).json({
+        success: false,
+        message: "❌ User không tồn tại",
+      });
+    }
+
+    console.log(`Found user - id: ${user.id}, fullName: "${user.fullName}"`);
+
+    // Xóa user khỏi MongoDB
+    await User.deleteOne({ _id: user._id });
+    console.log(`✅ User đã xóa khỏi MongoDB`);
+
+    // ⚠️ Cố gắng xóa khỏi Firebase (nếu có)
+    try {
+      await admin.auth().deleteUser(user.id);
+      console.log(`✅ User đã xóa khỏi Firebase`);
+    } catch (firebaseErr) {
+      console.warn(`⚠️ Không thể xóa khỏi Firebase:`, firebaseErr.message);
+    }
+
+    console.log(`🗑️ ==================================\n`);
+
+    res.json({
+      success: true,
+      message: "✅ User đã được xóa",
+      deletedUser: {
+        username: user.username,
+        email: user.email,
+        fullName: user.fullName,
+      },
+    });
+  } catch (err) {
+    console.error(`❌ Error deleting user:`, err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.get("/users/:id", async (req, res) => {
   try {
     const user = await User.findOne({ id: req.params.id });
