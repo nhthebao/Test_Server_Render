@@ -42,7 +42,7 @@ const UserSchema = new mongoose.Schema(
     image: {
       type: String,
       default:
-        "https://res.cloudinary.com/dxx0dqmn8/image/upload/v1761622331/default_user_avatar.png",
+        "https://firebasestorage.googleapis.com/v0/b/fooddelivery-15d47.firebasestorage.app/o/03ebd625cc0b9d636256ecc44c0ea324.jpg?alt=media&token=1632c189-ec3d-447b-8f3c-28048ae9812a",
     },
     favorite: [{ type: String }],
     cart: [
@@ -148,15 +148,6 @@ app.get("/", (req, res) => {
 // USER ROUTES (để đăng ký, đăng nhập qua Firebase tạm thời)
 // ============================================
 
-app.get("/users", async (req, res) => {
-  try {
-    const users = await User.find();
-    res.json(users);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 app.get("/users/:id", async (req, res) => {
   try {
     const user = await User.findOne({ id: req.params.id });
@@ -173,12 +164,42 @@ app.get("/users", async (req, res) => {
     const { email, username } = req.query;
     let query = {};
 
-    if (email) query.email = email;
-    if (username) query.username = username;
+    // ✅ Normalize email và username để query case-insensitive
+    if (email) {
+      const normalizedEmail = email.toLowerCase().trim();
+      query.email = normalizedEmail;
+      console.log(`🔍 [GET /users] Query by email: "${normalizedEmail}"`);
+    }
+    if (username) {
+      const normalizedUsername = username.toLowerCase().trim();
+      query.username = normalizedUsername;
+      console.log(`🔍 [GET /users] Query by username: "${normalizedUsername}"`);
+    }
 
     const users = await User.find(query);
+    console.log(`📊 [GET /users] Found ${users.length} user(s)`);
+
+    // ✅ Log thông tin user tìm thấy để debug
+    if (users.length > 0) {
+      users.forEach((u, idx) => {
+        console.log(
+          `  ${idx + 1}. username: "${u.username}", email: "${
+            u.email
+          }", phone: "${u.phone}"`
+        );
+      });
+    }
+
+    // ⚠️ Cảnh báo nếu tìm thấy nhiều users (không nên xảy ra do unique constraint)
+    if (users.length > 1) {
+      console.warn(
+        `⚠️ WARNING: Found ${users.length} users with same query! This should not happen!`
+      );
+    }
+
     res.json(users);
   } catch (err) {
+    console.error(`❌ [GET /users] Error:`, err.message);
     res.status(500).json({ error: err.message });
   }
 });
@@ -225,36 +246,80 @@ app.put("/users/:id", async (req, res) => {
 // AUTH ROUTES
 // ============================================
 
-// 🟢 LOGIN or REGISTER (qua Firebase)
+// 🔹 LOGIN or REGISTER (Firebase token)
 app.post("/auth/login", async (req, res) => {
   try {
-    const { firebaseToken } = req.body;
+    const { firebaseToken, username, fullName, phone, address } = req.body;
     if (!firebaseToken)
       return res.status(400).json({ message: "❌ Missing Firebase token" });
 
-    // ✅ Xác minh token bằng Firebase Admin SDK
     const decoded = await admin.auth().verifyIdToken(firebaseToken);
-    const { uid, email, name, picture, phone_number } = decoded;
+    const { uid, email, picture, phone_number } = decoded;
 
-    // 🔍 Tìm user trong MongoDB
+    console.log("🔍 Auth decoded:", {
+      uid,
+      email,
+      username,
+      fullName,
+      phone,
+      address,
+    });
+
     let user = await User.findOne({ id: uid });
 
-    // 🟢 Nếu chưa có → tạo mới
     if (!user) {
+      console.log("📝 Creating new user");
+
+      const normalizedUsername = username
+        ? username.toLowerCase()
+        : email?.split("@")[0].toLowerCase();
+      const normalizedEmail = email.toLowerCase();
+
+      // Check duplicates
+      const existingUsername = await User.findOne({
+        username: normalizedUsername,
+      });
+      if (existingUsername) {
+        return res.status(409).json({
+          message: "❌ Username đã tồn tại",
+          code: "USERNAME_CONFLICT",
+        });
+      }
+
+      const existingEmail = await User.findOne({ email: normalizedEmail });
+      if (existingEmail) {
+        return res.status(409).json({
+          message: "❌ Email đã tồn tại",
+          code: "EMAIL_CONFLICT",
+        });
+      }
+
+      const finalFullName =
+        fullName && fullName.trim() ? fullName.trim() : "No name";
+      const finalPhone =
+        phone && phone.trim() ? phone.trim() : phone_number || "";
+
       user = new User({
         id: uid,
-        fullName: name || "No name",
-        username: email?.split("@")[0] || uid,
-        email: email || "noemail@firebase.com",
-        phone: phone_number || "",
+        fullName: finalFullName,
+        username: normalizedUsername,
+        email: normalizedEmail,
+        phone: finalPhone,
+        address: address || "",
+        authProvider: "firebase",
+        paymentMethod: "momo",
         image: picture || undefined,
+        favorite: [],
+        cart: [],
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
       await user.save();
+      console.log("✅ New user created:", user.username);
+    } else {
+      console.log("✅ Existing user found:", user.username);
     }
 
-    // 🧾 Tạo JWT riêng cho backend (hạn 7 ngày)
     const token = jwt.sign(
       { id: user.id, username: user.username },
       process.env.JWT_SECRET,
@@ -267,7 +332,7 @@ app.post("/auth/login", async (req, res) => {
       user,
     });
   } catch (err) {
-    console.error("Auth error:", err);
+    console.error("❌ Auth error:", err);
     res.status(500).json({ error: err.message });
   }
 });
