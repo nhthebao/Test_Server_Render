@@ -412,9 +412,10 @@ app.delete("/desserts/:id", async (req, res) => {
 // =============================
 
 // 🔹 Tạo đơn hàng mới
-app.post("/orders", verifyToken, async (req, res) => {
+app.post("/orders", async (req, res) => {
   try {
     const {
+      userId,
       items,
       totalAmount,
       discount,
@@ -426,6 +427,9 @@ app.post("/orders", verifyToken, async (req, res) => {
     } = req.body;
 
     // Validate required fields
+    if (!userId) {
+      return res.status(400).json({ message: "❌ User ID is required" });
+    }
     if (!items || items.length === 0) {
       return res.status(400).json({ message: "❌ Items are required" });
     }
@@ -446,7 +450,7 @@ app.post("/orders", verifyToken, async (req, res) => {
 
     const newOrder = new Order({
       id: orderId,
-      userId: req.user.id,
+      userId: userId,
       items,
       totalAmount,
       discount: discount || 0,
@@ -462,7 +466,7 @@ app.post("/orders", verifyToken, async (req, res) => {
     await newOrder.save();
 
     // Optional: Clear cart after creating order
-    await User.findOneAndUpdate({ id: req.user.id }, { cart: [] });
+    await User.findOneAndUpdate({ id: userId }, { cart: [] });
 
     res.status(201).json({
       message: "✅ Order created successfully",
@@ -474,11 +478,14 @@ app.post("/orders", verifyToken, async (req, res) => {
 });
 
 // 🔹 Lấy tất cả đơn hàng (Admin) hoặc của user hiện tại
-app.get("/orders", verifyToken, async (req, res) => {
+app.get("/orders", async (req, res) => {
   try {
-    const { status, paymentStatus, page = 1, limit = 10 } = req.query;
+    const { userId, status, paymentStatus, page = 1, limit = 10 } = req.query;
 
-    let query = { userId: req.user.id };
+    let query = {};
+
+    // Filter by userId if provided
+    if (userId) query.userId = userId;
 
     // Filter by status
     if (status) query.status = status;
@@ -538,17 +545,12 @@ app.get("/orders/all", async (req, res) => {
 });
 
 // 🔹 Lấy chi tiết đơn hàng theo ID
-app.get("/orders/:id", verifyToken, async (req, res) => {
+app.get("/orders/:id", async (req, res) => {
   try {
     const order = await Order.findOne({ id: req.params.id });
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
-    }
-
-    // Check if user owns this order
-    if (order.userId !== req.user.id) {
-      return res.status(403).json({ message: "❌ Access denied" });
     }
 
     res.json(order);
@@ -558,7 +560,7 @@ app.get("/orders/:id", verifyToken, async (req, res) => {
 });
 
 // 🔹 Cập nhật trạng thái đơn hàng (Admin/User)
-app.patch("/orders/:id/status", verifyToken, async (req, res) => {
+app.patch("/orders/:id/status", async (req, res) => {
   try {
     const { status } = req.body;
 
@@ -579,15 +581,6 @@ app.patch("/orders/:id/status", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Order not found" });
     }
 
-    // User can only cancel their own pending orders
-    if (order.userId !== req.user.id && status === "cancelled") {
-      if (order.status !== "pending") {
-        return res
-          .status(400)
-          .json({ message: "❌ Can only cancel pending orders" });
-      }
-    }
-
     order.status = status;
     order.updatedAt = new Date().toISOString();
     await order.save();
@@ -602,7 +595,7 @@ app.patch("/orders/:id/status", verifyToken, async (req, res) => {
 });
 
 // 🔹 Cập nhật trạng thái thanh toán
-app.patch("/orders/:id/payment", verifyToken, async (req, res) => {
+app.patch("/orders/:id/payment", async (req, res) => {
   try {
     const { paymentStatus } = req.body;
 
@@ -630,17 +623,12 @@ app.patch("/orders/:id/payment", verifyToken, async (req, res) => {
 });
 
 // 🔹 Cập nhật thông tin đơn hàng (địa chỉ, ghi chú)
-app.put("/orders/:id", verifyToken, async (req, res) => {
+app.put("/orders/:id", async (req, res) => {
   try {
     const order = await Order.findOne({ id: req.params.id });
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
-    }
-
-    // User can only update their own orders
-    if (order.userId !== req.user.id) {
-      return res.status(403).json({ message: "❌ Access denied" });
     }
 
     // Can only update pending orders
@@ -669,17 +657,12 @@ app.put("/orders/:id", verifyToken, async (req, res) => {
 });
 
 // 🔹 Hủy đơn hàng
-app.delete("/orders/:id", verifyToken, async (req, res) => {
+app.delete("/orders/:id", async (req, res) => {
   try {
     const order = await Order.findOne({ id: req.params.id });
 
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
-    }
-
-    // User can only cancel their own orders
-    if (order.userId !== req.user.id) {
-      return res.status(403).json({ message: "❌ Access denied" });
     }
 
     // Can only cancel pending orders
@@ -703,13 +686,8 @@ app.delete("/orders/:id", verifyToken, async (req, res) => {
 });
 
 // 🔹 Lấy lịch sử đơn hàng của user
-app.get("/users/:userId/orders", verifyToken, async (req, res) => {
+app.get("/users/:userId/orders", async (req, res) => {
   try {
-    // User can only view their own orders
-    if (req.params.userId !== req.user.id) {
-      return res.status(403).json({ message: "❌ Access denied" });
-    }
-
     const orders = await Order.find({ userId: req.params.userId }).sort({
       createdAt: -1,
     });
@@ -721,10 +699,16 @@ app.get("/users/:userId/orders", verifyToken, async (req, res) => {
 });
 
 // 🔹 Thống kê đơn hàng theo trạng thái
-app.get("/orders/stats/summary", verifyToken, async (req, res) => {
+app.get("/orders/stats/summary", async (req, res) => {
   try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ message: "❌ User ID is required" });
+    }
+
     const stats = await Order.aggregate([
-      { $match: { userId: req.user.id } },
+      { $match: { userId: userId } },
       {
         $group: {
           _id: "$status",
@@ -735,9 +719,9 @@ app.get("/orders/stats/summary", verifyToken, async (req, res) => {
     ]);
 
     const summary = {
-      totalOrders: await Order.countDocuments({ userId: req.user.id }),
+      totalOrders: await Order.countDocuments({ userId: userId }),
       totalSpent: await Order.aggregate([
-        { $match: { userId: req.user.id, paymentStatus: "paid" } },
+        { $match: { userId: userId, paymentStatus: "paid" } },
         { $group: { _id: null, total: { $sum: "$finalAmount" } } },
       ]).then((result) => result[0]?.total || 0),
       byStatus: stats,
