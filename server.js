@@ -128,6 +128,15 @@ const OrderSchema = new mongoose.Schema(
       note: { type: String },
     },
     estimatedDeliveryTime: { type: String },
+    paymentTransaction: {
+      transactionId: { type: String },
+      gateway: { type: String },
+      transactionDate: { type: String },
+      amount: { type: Number },
+      referenceNumber: { type: String },
+      bankBrand: { type: String },
+      content: { type: String },
+    },
     createdAt: { type: String, default: () => new Date().toISOString() },
     updatedAt: { type: String, default: () => new Date().toISOString() },
   },
@@ -508,8 +517,8 @@ app.post("/orders", async (req, res) => {
         .json({ message: "❌ Delivery address and phone are required" });
     }
 
-    // Generate unique order ID
-    const orderId = `ORD-${Date.now()}-${Math.random()
+    // Generate unique order ID (format: DH-timestamp-random)
+    const orderId = `DH-${Date.now()}-${Math.random()
       .toString(36)
       .substr(2, 9)}`;
 
@@ -793,6 +802,206 @@ app.get("/orders/stats/summary", async (req, res) => {
     };
 
     res.json(summary);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// =============================
+// PAYMENT WEBHOOK (SEPAY)
+// =============================
+
+// Middleware để xác thực API Key từ Sepay
+const verifyApiKey = (req, res, next) => {
+  const apiKey = req.headers["authorization"];
+  const expectedApiKey = process.env.SEPAY_API_KEY || "thanhToanTrucTuyen";
+
+  // Sepay gửi với format: "Apikey YOUR_API_KEY"
+  if (!apiKey || !apiKey.includes(expectedApiKey)) {
+    console.log("❌ Invalid API Key:", apiKey);
+    return res.status(401).json({
+      success: false,
+      message: "❌ Unauthorized: Invalid API Key",
+    });
+  }
+
+  next();
+};
+
+// 🔹 Webhook nhận thông báo thanh toán từ Sepay
+app.post("/webhook/sepay", verifyApiKey, async (req, res) => {
+  try {
+    console.log("📥 Received Sepay webhook:");
+    console.log("Headers:", JSON.stringify(req.headers, null, 2));
+    console.log("Body:", JSON.stringify(req.body, null, 2));
+
+    const {
+      id,
+      gateway,
+      transaction_date,
+      account_number,
+      sub_account,
+      amount_in,
+      amount_out,
+      accumulated,
+      code,
+      transaction_content,
+      reference_number,
+      body,
+      bank_brand_name,
+    } = req.body;
+
+    // Validate webhook data
+    if (!id || !transaction_content) {
+      console.log("❌ Missing required fields");
+      return res.status(400).json({
+        success: false,
+        message: "❌ Invalid webhook data",
+      });
+    }
+
+    // Parse order ID from transaction content (format: DH-timestamp-randomstring)
+    // Ví dụ: "DH-1699401234567-abc123def" hoặc "Thanh toan DH-1699401234567-abc123def"
+    const orderIdMatch = transaction_content.match(/DH-\d+-[a-z0-9]+/i);
+
+    if (!orderIdMatch) {
+      console.log("⚠️ No order ID found in transaction content");
+      return res.status(200).json({
+        success: true,
+        message: "No order ID found",
+      });
+    }
+
+    const orderId = orderIdMatch[0];
+    console.log(`🔍 Processing payment for order: ${orderId}`);
+
+    // Find order in database
+    const order = await Order.findOne({ id: orderId });
+
+    if (!order) {
+      console.log(`❌ Order not found: ${orderId}`);
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+      });
+    }
+
+    // Check if payment amount matches
+    const expectedAmount = order.finalAmount;
+    const receivedAmount = amount_in || 0;
+
+    if (receivedAmount < expectedAmount) {
+      console.log(
+        `⚠️ Payment amount mismatch. Expected: ${expectedAmount}, Received: ${receivedAmount}`
+      );
+      return res.status(200).json({
+        success: true,
+        message: "Payment amount insufficient",
+        order: orderId,
+        expected: expectedAmount,
+        received: receivedAmount,
+      });
+    }
+
+    // Update order payment status
+    order.paymentStatus = "paid";
+    order.status = order.status === "pending" ? "confirmed" : order.status;
+    order.updatedAt = new Date().toISOString();
+
+    // Add payment transaction info to order
+    if (!order.paymentTransaction) {
+      order.paymentTransaction = {
+        transactionId: id,
+        gateway: gateway,
+        transactionDate: transaction_date,
+        amount: amount_in,
+        referenceNumber: reference_number,
+        bankBrand: bank_brand_name,
+        content: transaction_content,
+      };
+    }
+
+    await order.save();
+
+    console.log(`✅ Payment confirmed for order: ${orderId}`);
+
+    // Return success response to Sepay
+    res.status(200).json({
+      success: true,
+      message: "✅ Payment processed successfully",
+      orderId: orderId,
+      transactionId: id,
+      amount: amount_in,
+    });
+  } catch (err) {
+    console.error("❌ Webhook error:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
+  }
+});
+
+// 🔹 Kiểm tra trạng thái thanh toán của đơn hàng
+app.get("/payment/status/:orderId", async (req, res) => {
+  try {
+    const order = await Order.findOne({ id: req.params.orderId });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    res.json({
+      orderId: order.id,
+      paymentStatus: order.paymentStatus,
+      status: order.status,
+      finalAmount: order.finalAmount,
+      paymentTransaction: order.paymentTransaction || null,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 🔹 Tạo thông tin thanh toán (QR Code content)
+app.post("/payment/create", async (req, res) => {
+  try {
+    const { orderId } = req.body;
+
+    if (!orderId) {
+      return res.status(400).json({ message: "❌ Order ID is required" });
+    }
+
+    const order = await Order.findOne({ id: orderId });
+
+    if (!order) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    if (order.paymentStatus === "paid") {
+      return res.status(400).json({ message: "❌ Order already paid" });
+    }
+
+    // Tạo nội dung chuyển khoản cho QR Code
+    // Format: Mã đơn hàng để Sepay webhook có thể nhận dạng
+    const transferContent = `${order.id}`;
+
+    // Thông tin tài khoản ngân hàng (thay bằng thông tin thực tế của bạn)
+    const bankInfo = {
+      bankName: process.env.BANK_NAME || "MB Bank",
+      accountNumber: process.env.BANK_ACCOUNT || "0123456789",
+      accountName: process.env.BANK_ACCOUNT_NAME || "NGUYEN VAN A",
+      amount: order.finalAmount,
+      content: transferContent,
+      orderId: order.id,
+    };
+
+    res.json({
+      success: true,
+      message: "✅ Payment info created",
+      paymentInfo: bankInfo,
+      qrContent: `${bankInfo.accountNumber}|${bankInfo.amount}|${transferContent}`,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
