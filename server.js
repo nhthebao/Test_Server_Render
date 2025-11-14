@@ -491,6 +491,7 @@ app.delete("/desserts/:id", async (req, res) => {
 app.post("/orders", async (req, res) => {
   try {
     const {
+      id, // ✅ Nhận orderID từ client
       userId,
       items,
       totalAmount,
@@ -519,10 +520,20 @@ app.post("/orders", async (req, res) => {
         .json({ message: "❌ Delivery address and phone are required" });
     }
 
-    // Generate unique order ID (format: DH-timestamp-random)
-    const orderId = `DH-${Date.now()}-${Math.random()
-      .toString(36)
-      .substr(2, 9)}`;
+    // ✅ Dùng orderID từ client HOẶC tự generate nếu không có
+    const orderId =
+      id || `DH-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // ✅ Check duplicate
+    const existingOrder = await Order.findOne({ id: orderId });
+    if (existingOrder) {
+      console.log(`⚠️ Order ${orderId} already exists`);
+      return res.status(200).json({
+        success: true,
+        message: "Order already exists",
+        order: existingOrder,
+      });
+    }
 
     const newOrder = new Order({
       id: orderId,
@@ -541,10 +552,16 @@ app.post("/orders", async (req, res) => {
 
     await newOrder.save();
 
+    console.log(`✅ Order created: ${orderId}`);
+    console.log(`   User: ${userId}`);
+    console.log(`   Items: ${items.length}`);
+    console.log(`   Amount: ${finalAmount} VND`);
+
     // Optional: Clear cart after creating order
     await User.findOneAndUpdate({ id: userId }, { cart: [] });
 
     res.status(201).json({
+      success: true,
       message: "✅ Order created successfully",
       order: newOrder,
     });
@@ -887,45 +904,98 @@ app.post("/webhook/sepay", verifyApiKey, async (req, res) => {
     console.log(`💰 Transfer Amount: ${transferAmount} VND`);
     console.log(`📝 Content: ${content}`);
 
-    // Parse order ID from transaction content
-    // Format có thể là: "DH249290", "DH-1699401234567", "DH-1699401234567-abc123" hoặc "DH249290-"
-    // Regex này sẽ match: DH + số (bắt buộc) + tùy chọn (-chữ/số)
-    const orderIdMatch = content.match(/DH\d+(-[a-z0-9]+)?/i);
+    // ✅ Parse order ID - Ưu tiên dùng field "code" từ Sepay
+    let orderId = null;
 
-    if (!orderIdMatch) {
-      console.log("⚠️ No order ID found in transaction content");
-      console.log(`📄 Content received: ${content}`);
+    // Strategy 1: Dùng field "code" (Sepay cung cấp sẵn)
+    if (code) {
+      orderId = code.replace(/-$/, ""); // Remove trailing dash
+      console.log(`✅ Using 'code' field: ${orderId}`);
+    }
+
+    // Strategy 2: Parse từ "content" nếu không có "code"
+    if (!orderId && content) {
+      // Match các format: DH123456, DH-1699401234567, DH-1699401234567-abc123
+      const orderIdMatch = content.match(/DH[\d-]+[a-z0-9]*/i);
+      if (orderIdMatch) {
+        orderId = orderIdMatch[0].replace(/-+$/, ""); // Remove trailing dashes
+        console.log(`✅ Parsed from 'content': ${orderId}`);
+      }
+    }
+
+    // Validate orderId
+    if (!orderId) {
+      console.log("❌ No order ID found");
+      console.log(`📄 code: ${code}`);
+      console.log(`📄 content: ${content}`);
       return res.status(200).json({
-        success: true,
+        success: false,
         message: "No order ID found",
       });
     }
 
-    const orderId = orderIdMatch[0].replace(/-$/, ""); // Remove trailing dash if exists
     console.log(`🔍 Processing payment for order: ${orderId}`);
 
-    // Find order in database - try exact match first, then regex match
-    let order = await Order.findOne({ id: orderId });
+    // Find order in database - Multiple strategies
+    let order = null;
 
-    // If not found, try to find by partial match (in case format differs)
+    // Strategy 1: Exact match
+    order = await Order.findOne({ id: orderId });
+    if (order) {
+      console.log(`✅ Found order by exact match: ${order.id}`);
+    }
+
+    // Strategy 2: Partial match (case-insensitive)
     if (!order) {
       console.log(`⚠️ Exact match not found, trying partial match...`);
       order = await Order.findOne({
         id: { $regex: new RegExp(`^${orderId.replace(/[-]/g, "\\-")}`, "i") },
       });
+      if (order) {
+        console.log(`✅ Found order by partial match: ${order.id}`);
+      }
     }
 
+    // Strategy 3: Search by short code (DH230920)
+    if (!order && orderId.startsWith("DH")) {
+      console.log(`⚠️ Trying to find by short code pattern...`);
+      const shortCode = orderId.replace(/^DH-?/, ""); // Remove "DH" or "DH-"
+      order = await Order.findOne({
+        id: { $regex: new RegExp(`DH[\\-]?${shortCode}`, "i") },
+      });
+      if (order) {
+        console.log(`✅ Found order by short code: ${order.id}`);
+      }
+    }
+
+    // Not found
     if (!order) {
       console.log(`❌ Order not found: ${orderId}`);
-      console.log(`📋 Available orders: ${await Order.countDocuments()}`);
+      console.log(
+        `📋 Total orders in database: ${await Order.countDocuments()}`
+      );
+
+      // List recent orders for debugging
+      const recentOrders = await Order.find({})
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .select("id createdAt");
+      console.log(
+        `📋 Recent orders:`,
+        recentOrders.map((o) => `${o.id} (${o.createdAt})`)
+      );
+
       return res.status(200).json({
         success: false,
         message: "Order not found",
         searchedId: orderId,
+        hint: "Make sure order is created before payment",
       });
     }
 
-    console.log(`✅ Found order: ${order.id}`);
+    console.log(
+      `✅ Found order: ${order.id} (${order.status}, ${order.paymentStatus})`
+    );
 
     // Check if already paid
     if (order.paymentStatus === "paid") {
