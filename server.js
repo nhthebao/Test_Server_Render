@@ -600,9 +600,10 @@ app.post("/orders", async (req, res) => {
     await newOrder.save();
 
     console.log(`✅ Order created: ${orderId}`);
-    console.log(`   User: ${userId}`);
+    console.log(`   User ID: ${userId} (type: ${typeof userId})`);
     console.log(`   Items: ${items.length}`);
     console.log(`   Amount: ${finalAmount} VND`);
+    console.log(`   Payment Method: ${paymentMethod}`);
 
     // Optional: Clear cart after creating order
     await User.findOneAndUpdate({ id: userId }, { cart: [] });
@@ -869,12 +870,64 @@ app.delete("/orders/:id", async (req, res) => {
 // 🔹 Lấy lịch sử đơn hàng của user
 app.get("/users/:userId/orders", async (req, res) => {
   try {
-    const orders = await Order.find({ userId: req.params.userId }).sort({
-      createdAt: -1,
-    });
+    const userId = req.params.userId;
+    console.log(
+      `📦 [GET /users/:userId/orders] Fetching orders for user: ${userId}`
+    );
+    console.log(`   userId length: ${userId.length}, type: ${typeof userId}`);
+
+    const orders = await Order.find({ userId: userId })
+      .sort({ createdAt: -1 })
+      .maxTimeMS(10000);
+
+    console.log(
+      `📥 [GET /users/:userId/orders] Found ${orders.length} orders for user ${userId}`
+    );
+
+    if (orders.length > 0) {
+      console.log("📋 First 3 orders:");
+      orders.slice(0, 3).forEach((order, idx) => {
+        console.log(
+          `   ${idx + 1}. ${order.id} - ${order.status} - ${
+            order.paymentStatus
+          } - ${order.createdAt}`
+        );
+      });
+    } else {
+      // Debug: List all orders to see if userId format is different
+      const totalOrders = await Order.countDocuments();
+      console.log(`⚠️ No orders found for userId: "${userId}"`);
+      console.log(`📊 Total orders in database: ${totalOrders}`);
+
+      if (totalOrders > 0) {
+        // Get all unique userIds
+        const allOrders = await Order.find({}).select("userId").limit(10);
+        const uniqueUserIds = [...new Set(allOrders.map((o) => o.userId))];
+        console.log(`👥 Unique userIds in database (first 10):`, uniqueUserIds);
+
+        // Check if any order has similar userId
+        const similarOrders = await Order.find({
+          userId: { $regex: userId.substring(0, 10), $options: "i" },
+        }).limit(3);
+
+        if (similarOrders.length > 0) {
+          console.log(
+            `🔍 Found ${similarOrders.length} orders with similar userId:`
+          );
+          similarOrders.forEach((o, idx) => {
+            console.log(`   ${idx + 1}. Order ${o.id}:`);
+            console.log(`      userId: "${o.userId}"`);
+            console.log(
+              `      Match: ${o.userId === userId ? "EXACT" : "PARTIAL"}`
+            );
+          });
+        }
+      }
+    }
 
     res.json({ orders, total: orders.length });
   } catch (err) {
+    console.error("❌ [GET /users/:userId/orders] Error:", err);
     res.status(500).json({ error: err.message });
   }
 });
