@@ -7,6 +7,9 @@ const admin = require("./firebase");
 const jwt = require("jsonwebtoken");
 const { verifyToken } = require("./middlewares/auth");
 
+// 📧 SendGrid for email sending
+const sgMail = require("@sendgrid/mail");
+
 const app = express();
 app.use(express.json());
 app.use(cors());
