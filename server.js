@@ -652,6 +652,47 @@ app.get("/orders", async (req, res) => {
   }
 });
 
+// 🔹 Lấy đơn hàng theo userId (cho user xem lịch sử của mình)
+app.get("/orders", async (req, res) => {
+  try {
+    const { userId, status, paymentStatus, page = 1, limit = 50 } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+
+    let query = { userId };
+
+    if (status) query.status = status;
+    if (paymentStatus) query.paymentStatus = paymentStatus;
+
+    const orders = await Order.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .skip((parseInt(page) - 1) * parseInt(limit))
+      .maxTimeMS(10000);
+
+    const total = await Order.countDocuments(query).maxTimeMS(5000);
+
+    console.log(
+      `📦 [GET /orders] Found ${orders.length} orders for user ${userId}`
+    );
+
+    res.json({
+      orders,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    console.error("❌ [GET /orders] Error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // 🔹 Lấy tất cả đơn hàng của tất cả users (Admin only)
 app.get("/orders/all", async (req, res) => {
   try {
