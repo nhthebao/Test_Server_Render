@@ -15,9 +15,32 @@ app.use(cors());
 // KẾT NỐI MONGODB ATLAS
 // ============================================
 mongoose
-  .connect(process.env.MONGO_URI)
+  .connect(process.env.MONGO_URI, {
+    serverSelectionTimeoutMS: 5000, // Timeout after 5s instead of 30s
+    socketTimeoutMS: 45000, // Close sockets after 45s of inactivity
+  })
   .then(() => console.log("✅ MongoDB connected to foodDelivery"))
   .catch((err) => console.log("❌ DB connection error:", err));
+
+// ✅ MongoDB connection event handlers
+mongoose.connection.on("connected", () => {
+  console.log("✅ Mongoose connected to MongoDB");
+});
+
+mongoose.connection.on("error", (err) => {
+  console.error("❌ Mongoose connection error:", err);
+});
+
+mongoose.connection.on("disconnected", () => {
+  console.warn("⚠️ Mongoose disconnected from MongoDB");
+});
+
+// Graceful shutdown
+process.on("SIGINT", async () => {
+  await mongoose.connection.close();
+  console.log("👋 Mongoose connection closed due to app termination");
+  process.exit(0);
+});
 
 // Kiểm tra biến môi trường JWT_SECRET
 if (!process.env.JWT_SECRET) {
@@ -153,6 +176,30 @@ const Order = mongoose.model("Order", OrderSchema);
 
 app.get("/", (req, res) => {
   res.send("🚀 Backend connected with Firebase Auth!");
+});
+
+// ✅ Health check endpoint
+app.get("/health", async (req, res) => {
+  try {
+    const dbStatus =
+      mongoose.connection.readyState === 1 ? "connected" : "disconnected";
+    const orderCount = await Order.countDocuments().maxTimeMS(3000);
+
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      database: dbStatus,
+      ordersCount: orderCount,
+      uptime: process.uptime(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: "error",
+      error: error.message,
+      database:
+        mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+    });
+  }
 });
 
 // ============================================
@@ -1069,13 +1116,62 @@ app.post("/webhook/sepay", verifyApiKey, async (req, res) => {
 // 🔹 Kiểm tra trạng thái thanh toán của đơn hàng
 app.get("/payment/status/:orderId", async (req, res) => {
   try {
-    const order = await Order.findOne({ id: req.params.orderId });
+    const orderId = req.params.orderId;
+    console.log(
+      `🔍 [GET /payment/status] Checking payment for order: ${orderId}`
+    );
 
-    if (!order) {
-      return res.status(404).json({ message: "Order not found" });
+    // ✅ Validate orderId format
+    if (!orderId || orderId.length < 3) {
+      console.log(`❌ [GET /payment/status] Invalid orderId: ${orderId}`);
+      return res.status(400).json({
+        success: false,
+        message: "Invalid order ID format",
+      });
     }
 
+    // ✅ Check MongoDB connection
+    if (mongoose.connection.readyState !== 1) {
+      console.error("❌ [GET /payment/status] MongoDB not connected!");
+      return res.status(503).json({
+        success: false,
+        message: "Database connection unavailable",
+      });
+    }
+
+    // ✅ Find order with timeout
+    const order = await Order.findOne({ id: orderId })
+      .maxTimeMS(5000) // 5 second timeout
+      .exec();
+
+    if (!order) {
+      console.log(`⚠️ [GET /payment/status] Order not found: ${orderId}`);
+
+      // Debug: Show recent orders
+      const recentOrders = await Order.find({})
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .select("id createdAt paymentStatus")
+        .maxTimeMS(3000);
+
+      console.log(
+        `📋 Recent orders:`,
+        recentOrders.map((o) => `${o.id} (${o.paymentStatus})`)
+      );
+
+      return res.status(404).json({
+        success: false,
+        message: "Order not found",
+        orderId: orderId,
+      });
+    }
+
+    console.log(
+      `✅ [GET /payment/status] Found order: ${order.id} - ${order.paymentStatus}`
+    );
+
     res.json({
+      success: true,
       orderId: order.id,
       paymentStatus: order.paymentStatus,
       status: order.status,
@@ -1083,7 +1179,15 @@ app.get("/payment/status/:orderId", async (req, res) => {
       paymentTransaction: order.paymentTransaction || null,
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error(`❌ [GET /payment/status] Error:`, err);
+
+    // ✅ Return detailed error for debugging
+    res.status(500).json({
+      success: false,
+      error: err.message,
+      type: err.name,
+      orderId: req.params.orderId,
+    });
   }
 });
 
