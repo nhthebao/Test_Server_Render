@@ -887,31 +887,45 @@ app.post("/webhook/sepay", verifyApiKey, async (req, res) => {
     console.log(`💰 Transfer Amount: ${transferAmount} VND`);
     console.log(`📝 Content: ${content}`);
 
-    // Parse order ID from transaction content (format: DH-timestamp-randomstring)
-    // Ví dụ: "DH-1699401234567-abc123def" hoặc "thanh toan DH-1699401234567-abc123def"
-    const orderIdMatch = content.match(/DH-\d+-[a-z0-9]+/i);
+    // Parse order ID from transaction content
+    // Format có thể là: "DH249290", "DH-1699401234567", "DH-1699401234567-abc123" hoặc "DH249290-"
+    // Regex này sẽ match: DH + số (bắt buộc) + tùy chọn (-chữ/số)
+    const orderIdMatch = content.match(/DH\d+(-[a-z0-9]+)?/i);
 
     if (!orderIdMatch) {
       console.log("⚠️ No order ID found in transaction content");
+      console.log(`📄 Content received: ${content}`);
       return res.status(200).json({
         success: true,
         message: "No order ID found",
       });
     }
 
-    const orderId = orderIdMatch[0];
+    const orderId = orderIdMatch[0].replace(/-$/, ""); // Remove trailing dash if exists
     console.log(`🔍 Processing payment for order: ${orderId}`);
 
-    // Find order in database
-    const order = await Order.findOne({ id: orderId });
+    // Find order in database - try exact match first, then regex match
+    let order = await Order.findOne({ id: orderId });
+
+    // If not found, try to find by partial match (in case format differs)
+    if (!order) {
+      console.log(`⚠️ Exact match not found, trying partial match...`);
+      order = await Order.findOne({
+        id: { $regex: new RegExp(`^${orderId.replace(/[-]/g, "\\-")}`, "i") },
+      });
+    }
 
     if (!order) {
       console.log(`❌ Order not found: ${orderId}`);
+      console.log(`📋 Available orders: ${await Order.countDocuments()}`);
       return res.status(200).json({
         success: false,
         message: "Order not found",
+        searchedId: orderId,
       });
     }
+
+    console.log(`✅ Found order: ${order.id}`);
 
     // Check if already paid
     if (order.paymentStatus === "paid") {
