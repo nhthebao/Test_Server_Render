@@ -4,20 +4,21 @@ node_modules/
 # Environment files
 .env
 .env.local
-.env.*.local
+.env.development
+.env.production
+
+# Firebase service key
+serviceAccountKey.json
 
 # Logs
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Firebase service key
-serviceAccountKey.json
+# System files
+.DS_Store
+Thumbs.db
 
 # Build outputs
 dist/
 build/
-
-# Misc
-.DS_Store
-.vscode/
