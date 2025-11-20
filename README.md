@@ -275,7 +275,8 @@ npx expo start
 
 ## Liên hệ
 - **Email**: gobitefood@gmail.com
-- **GitHub**: [nhthebao/foodDelivery-mobile-app](https://github.com/nhthebao/foodDelivery-mobile-app)
+- **GitHub Fontend**: [nhthebao/foodDelivery-mobile-app](https://github.com/nhthebao/foodDelivery-mobile-app)
+- **GitHub Backend**: [nhthebao/Test_Server_Render](https://github.com/nhthebao/Test_Server_Render)
 
 ---
 
