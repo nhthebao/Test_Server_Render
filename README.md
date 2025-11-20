@@ -1,8 +1,8 @@
+<div align="center">
+    
 # Food Delivery Mobile App
 
-## Nhóm 6
-
-<div align="center">
+## Nhóm 6 
 
 | STT | Họ tên | MSSV | Công việc |
 |-----|--------|------|-----------|
