@@ -1,11 +1,14 @@
 const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
+const axios = require("axios");
 require("dotenv").config();
 
 const app = express();
 app.use(express.json());
 app.use(cors());
+
+const resetSessions = {}; // Store temporary reset sessions
 
 // ============================================
 // NOTE: This file has been refactored!
@@ -183,6 +186,68 @@ const userRoutes = require("./routes/user.routes");
 const dessertRoutes = require("./routes/dessert.routes");
 const orderRoutes = require("./routes/order.routes");
 const paymentRoutes = require("./routes/payment.routes");
+
+// Order Schema
+const OrderSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true, unique: true },
+    userId: { type: String, required: true },
+    items: [
+      {
+        dessertId: { type: String, required: true },
+        dessertName: { type: String },
+        dessertImage: { type: String },
+        quantity: { type: Number, required: true, min: 1 },
+        price: { type: Number, required: true },
+        discount: { type: Number, default: 0 },
+      },
+    ],
+    totalAmount: { type: Number, required: true },
+    discount: { type: Number, default: 0 },
+    deliveryFee: { type: Number, default: 0 },
+    finalAmount: { type: Number, required: true },
+    status: {
+      type: String,
+      enum: [
+        "pending",
+        "confirmed",
+        "preparing",
+        "delivering",
+        "delivered",
+        "cancelled",
+      ],
+      default: "pending",
+    },
+    paymentMethod: { type: String, default: "momo" },
+    paymentStatus: {
+      type: String,
+      enum: ["unpaid", "paid", "refunded"],
+      default: "unpaid",
+    },
+    deliveryAddress: {
+      fullAddress: { type: String, required: true },
+      phone: { type: String, required: true },
+      note: { type: String },
+    },
+    estimatedDeliveryTime: { type: String },
+    paymentTransaction: {
+      transactionId: { type: String },
+      gateway: { type: String },
+      transactionDate: { type: String },
+      amount: { type: Number },
+      referenceNumber: { type: String },
+      bankBrand: { type: String },
+      content: { type: String },
+      description: { type: String },
+      subAccount: { type: String },
+    },
+    createdAt: { type: String, default: () => new Date().toISOString() },
+    updatedAt: { type: String, default: () => new Date().toISOString() },
+  },
+  { collection: "orders" }
+);
+
+const Order = mongoose.model("Order", OrderSchema);
 
 // ============================================
 // ROUTES
