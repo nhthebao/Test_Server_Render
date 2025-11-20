@@ -1,147 +1,142 @@
-# 🍰 Food Delivery Mobile App
+# Food Delivery Mobile App
 
-## 👥 Nhóm 6
+## Nhóm 6
 
-### Thành viên:
+<div align="center">
 
-1. **Nguyễn Văn A** - MSSV: 21xxxxx
-2. **Trần Thị B** - MSSV: 21xxxxx
-3. **Lê Văn C** - MSSV: 21xxxxx
-
----
-
-## 📱 Giới thiệu dự án
-
-Food Delivery Mobile App là ứng dụng đặt đồ ăn trên di động được xây dựng bằng **React Native** và **Expo**, kết hợp với backend **Node.js/Express** và cơ sở dữ liệu **MongoDB Atlas**. Ứng dụng cung cấp trải nghiệm mua sắm đồ ăn trực tuyến hoàn chỉnh với các tính năng hiện đại.
+| STT | Họ tên | MSSV | Công việc |
+|-----|--------|------|-----------|
+| 1 | Nguyễn Huỳnh Thế Bảo | 22690761 |  |
+| 2 | Nguyễn Tấn Nghị | 22685461 |  |
+| 3 | Nguyễn Hoài Nhân | 22689531 |  |
 
 ---
 
-## ✨ Tính năng chính
+</div>
 
-### 🔐 Xác thực & Quản lý người dùng
+## Giới thiệu dự án
 
+Food Delivery Mobile App là một ứng dụng đặt đồ ăn trực tuyến được phát triển bằng **React Native** với **Expo**, kết hợp backend **Node.js/Express** và cơ sở dữ liệu **MongoDB Atlas**. Ứng dụng mang đến trải nghiệm mua sắm đồ ăn hoàn chỉnh và tiện lợi cho người dùng di động.
+
+---
+
+## Tính năng chính
+
+### Xác thực và Quản lý người dùng
 - Đăng nhập/Đăng ký qua Firebase Authentication
 - Quên mật khẩu với xác thực OTP qua email
 - Quản lý thông tin cá nhân (tên, email, số điện thoại, địa chỉ)
 - Upload và cập nhật ảnh đại diện
 
-### 🛒 Mua sắm
-
-- Duyệt danh sách món ăn với hình ảnh và mô tả chi tiết
+### Mua sắm
+- Duyệt danh sách món ăn với hình ảnh, mô tả chi tiết và giá cả
 - Tìm kiếm và lọc món ăn theo danh mục
-- Thêm/xóa món ăn vào giỏ hàng
-- Quản lý số lượng sản phẩm trong giỏ
-- Danh sách yêu thích (Favorites)
+- Quản lý giỏ hàng (thêm, xóa, điều chỉnh số lượng)
+- Danh sách yêu thích (Favorites) để tiện lựa chọn lần sau
 
-### 💳 Thanh toán
-
-- Tích hợp thanh toán qua Sepay (chuyển khoản ngân hàng) và thanh toán trực tiếp
+### Thanh toán
+- Tích hợp thanh toán qua Sepay (chuyển khoản ngân hàng)
+- Hỗ trợ thanh toán trực tiếp
 - Webhook tự động cập nhật trạng thái thanh toán
 - Quản lý phương thức thanh toán
 
-### 📦 Quản lý đơn hàng
-
+### Quản lý đơn hàng
 - Theo dõi trạng thái đơn hàng real-time
-- Lịch sử đơn hàng
-- Thông báo cập nhật trạng thái đơn hàng
-! Vì nhóm chúng em chưa làm được map nên phần đơn hàng chỉ làm tới bước thanh toán thành công và cập nhật trạng thái đơn hàng sau khi đã thanh toán.
-### 🤖 AI Assistant
+- Lịch sử đơn hàng chi tiết
+- Cập nhật trạng thái sau khi thanh toán thành công
+- *Lưu ý: Phần tracking vị trí đơn hàng trên bản đồ sẽ được phát triển trong các phiên bản tiếp theo*
 
-- Tích hợp AI chatbot hỗ trợ khách hàng
-- Gợi ý món ăn thông minh
+### AI Assistant
+- Chatbot hỗ trợ khách hàng tích hợp AI
+- Gợi ý món ăn thông minh dựa trên sở thích người dùng
 
 ---
 
-## 🏗️ Kiến trúc hệ thống
+## Kiến trúc hệ thống
 
 ### Frontend (Mobile App)
-
 - **Framework**: React Native với Expo SDK
 - **Navigation**: Expo Router (file-based routing)
 - **State Management**: React Context API
-- **Database**: SQLite (offline storage)
+- **Local Storage**: SQLite
 - **Authentication**: Firebase Admin SDK
-- **UI Components**: Custom components với React Native
+- **HTTP Client**: Axios
+- **Language**: TypeScript
 
 ### Backend (Server)
-
 - **Runtime**: Node.js v20.x
 - **Framework**: Express.js
 - **Database**: MongoDB Atlas
-- **ODM**: Mongoose
+- **ORM/ODM**: Mongoose
 - **Authentication**: JWT + Firebase Admin
 - **Email Service**: SendGrid & Nodemailer
 - **Payment Gateway**: Sepay API
 
 ---
 
-## 📂 Cấu trúc thư mục
+## Cấu trúc thư mục
 
 ```
 TeamProject/
 │
-├── foodDelivery-mobile-app/          # Mobile App (React Native + Expo)
-│   ├── app/                          # Screens & Navigation
-│   │   ├── (tabs)/                   # Tab-based screens
-│   │   ├── login-signUp/             # Authentication screens
-│   │   ├── forgot-password/          # Password recovery flow
-│   │   ├── order-process/            # Order tracking screens
-│   │   ├── payment/                  # Payment screens
-│   │   └── profile/                  # User profile screens
+├── foodDelivery-mobile-app/        # Ứng dụng di động
+│   ├── app/                        # Screens & Navigation
+│   │   ├── (tabs)/                 # Tab-based navigation
+│   │   ├── login-signUp/           # Xác thực người dùng
+│   │   ├── forgot-password/        # Khôi phục mật khẩu
+│   │   ├── order-process/          # Xử lý đơn hàng
+│   │   ├── payment/                # Thanh toán
+│   │   └── profile/                # Hồ sơ người dùng
 │   │
-│   ├── components/                   # Reusable UI components
-│   ├── context/                      # React Context (state management)
-│   ├── services/                     # API & Firebase services
-│   ├── constants/                    # Theme & constants
-│   ├── hooks/                        # Custom React hooks
-│   └── assets/                       # Images, icons, fonts
+│   ├── components/                 # Các component tái sử dụng
+│   ├── context/                    # React Context (quản lý state)
+│   ├── services/                   # API & Firebase services
+│   ├── constants/                  # Theme & hằng số
+│   ├── hooks/                      # Custom React hooks
+│   └── assets/                     # Hình ảnh, icon, font
 │
-└── Test_Server_Render/               # Backend Server (Node.js + Express)
-    ├── routes/                       # API routes (modular structure)
-    │   ├── auth.routes.js            # Authentication endpoints
-    │   ├── user.routes.js            # User CRUD & cart
-    │   ├── dessert.routes.js         # Product/dessert management
-    │   ├── order.routes.js           # Order management
-    │   └── payment.routes.js         # Payment & webhook
+└── Test_Server_Render/             # Backend Server
+    ├── routes/                     # API routes
+    │   ├── auth.routes.js          # Xác thực
+    │   ├── user.routes.js          # Quản lý người dùng & giỏ hàng
+    │   ├── dessert.routes.js       # Quản lý sản phẩm
+    │   ├── order.routes.js         # Quản lý đơn hàng
+    │   └── payment.routes.js       # Thanh toán & webhook
     │
-    ├── services/                     # Business logic services
-    │   └── email.service.js          # Email sending service
+    ├── services/                   # Business logic
+    │   └── email.service.js        # Dịch vụ gửi email
     │
-    ├── middlewares/                  # Express middlewares
-    │   └── auth.js                   # JWT verification
+    ├── middlewares/                # Express middlewares
+    │   └── auth.js                 # Xác thực JWT
     │
-    ├── firebase.js                   # Firebase Admin config
-    └── server.js                     # Main server entry point
+    ├── firebase.js                 # Cấu hình Firebase Admin
+    └── server.js                   # Entry point
 ```
 
 ---
 
-## 🚀 Cài đặt và chạy dự án
+## Cài đặt và chạy dự án
 
 ### Yêu cầu hệ thống
-
 - Node.js v20.x trở lên
 - npm hoặc yarn
 - Expo CLI
 - Android Studio hoặc Xcode (để chạy emulator)
 - MongoDB Atlas account
 
-### 1️⃣ Clone repository
-
+### Bước 1: Clone repository
 ```bash
 git clone https://github.com/nhthebao/foodDelivery-mobile-app.git
 cd TeamProject
 ```
 
-### 2️⃣ Cài đặt Backend
-
+### Bước 2: Cài đặt Backend
 ```bash
 cd Test_Server_Render
 npm install
 ```
 
-Tạo file `.env` với nội dung:
-
+Tạo file `.env`:
 ```env
 MONGO_URI=your_mongodb_connection_string
 JWT_SECRET=your_jwt_secret_key
@@ -153,20 +148,17 @@ PORT=10000
 ```
 
 Chạy server:
-
 ```bash
 node server.js
 ```
 
-### 3️⃣ Cài đặt Mobile App
-
+### Bước 3: Cài đặt Mobile App
 ```bash
 cd foodDelivery-mobile-app
 npm install
 ```
 
-Tạo file `.env` trong thư mục `ENV/`:
-
+Tạo file `.env`:
 ```env
 EXPO_PUBLIC_API_URL=http://your-server-url:10000
 EXPO_PUBLIC_FIREBASE_API_KEY=your_firebase_api_key
@@ -174,75 +166,67 @@ EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=your_firebase_auth_domain
 EXPO_PUBLIC_FIREBASE_PROJECT_ID=your_firebase_project_id
 ```
 
-Chạy app:
-
+Chạy ứng dụng:
 ```bash
 npx expo start
 ```
 
 ---
 
-## 🔧 Công nghệ sử dụng
+## Công nghệ sử dụng
 
 ### Mobile App
-
-| Công nghệ    | Mục đích                    |
-| ------------ | --------------------------- |
+| Công nghệ | Mục đích |
+|-----------|---------|
 | React Native | Framework phát triển mobile |
-| Expo         | Toolchain và SDK            |
-| Expo Router  | File-based navigation       |
-| Firebase     | Authentication              |
-| SQLite       | Local database              |
-| Axios        | HTTP client                 |
-| TypeScript   | Type safety                 |
+| Expo | SDK & toolchain |
+| Expo Router | Điều hướng dựa trên tệp |
+| Firebase | Xác thực người dùng |
+| SQLite | Cơ sở dữ liệu cục bộ |
+| Axios | HTTP client |
+| TypeScript | Type safety |
 
 ### Backend
-
-| Công nghệ      | Mục đích                   |
-| -------------- | -------------------------- |
-| Express.js     | Web framework              |
-| MongoDB        | NoSQL database             |
-| Mongoose       | ODM cho MongoDB            |
-| JWT            | Token-based authentication |
-| Firebase Admin | User management            |
-| SendGrid       | Email service              |
-| Nodemailer     | SMTP email                 |
-| Sepay          | Payment gateway            |
+| Công nghệ | Mục đích |
+|-----------|---------|
+| Express.js | Web framework |
+| MongoDB | NoSQL database |
+| Mongoose | ODM |
+| JWT | Token authentication |
+| Firebase Admin | Quản lý người dùng |
+| SendGrid | Email service |
+| Sepay | Payment gateway |
 
 ---
 
-## 📊 Database Schema
+## Database Schema
 
 ### Users Collection
-
-- id, fullName, username, email, phone, address
-- authProviders[], paymentMethod, image
-- favorite[], cart[]
-- createdAt, updatedAt
+- `id`, `fullName`, `username`, `email`, `phone`, `address`
+- `authProviders[]`, `paymentMethod`, `image`
+- `favorite[]`, `cart[]`
+- `createdAt`, `updatedAt`
 
 ### Desserts Collection
-
-- id, name, rating, price, category
-- discount, reviews, deliveryTime
-- image, description, freeDelivery
-- review[] (nested: idUser, content, rating, date)
+- `id`, `name`, `rating`, `price`, `category`
+- `discount`, `deliveryTime`
+- `image`, `description`, `freeDelivery`
+- `review[]` (idUser, content, rating, date)
 
 ### Orders Collection
-
-- id, userId, items[]
-- totalAmount, discount, deliveryFee, finalAmount
-- status, paymentMethod, paymentStatus
-- deliveryAddress {fullAddress, phone, note}
-- paymentTransaction {}
-- estimatedDeliveryTime
-- createdAt, updatedAt
+- `id`, `userId`, `items[]`
+- `totalAmount`, `discount`, `deliveryFee`, `finalAmount`
+- `status`, `paymentMethod`, `paymentStatus`
+- `deliveryAddress` {fullAddress, phone, note}
+- `paymentTransaction{}`
+- `estimatedDeliveryTime`
+- `createdAt`, `updatedAt`
 
 ---
 
-## 🔐 API Endpoints
+## API Endpoints
 
 ### Authentication
-
 - `POST /auth/login` - Đăng nhập với Firebase token
 - `GET /auth/me` - Lấy thông tin user hiện tại
 - `POST /auth/logout` - Đăng xuất
@@ -251,7 +235,6 @@ npx expo start
 - `POST /auth/password/change-password` - Đổi mật khẩu
 
 ### Users
-
 - `GET /users` - Lấy danh sách users
 - `GET /users/:id` - Lấy thông tin user theo ID
 - `GET /users/:id/cart` - Lấy giỏ hàng
@@ -260,15 +243,13 @@ npx expo start
 - `DELETE /users/:id/cart/:itemId` - Xóa món khỏi giỏ
 
 ### Desserts
-
-- `GET /desserts` - Lấy danh sách món ăn
+- `GET /desserts` - Danh sách món ăn
 - `GET /desserts/:id` - Chi tiết món ăn
 - `POST /desserts` - Tạo món ăn mới
 - `PUT /desserts/:id` - Cập nhật món ăn
 - `DELETE /desserts/:id` - Xóa món ăn
 
 ### Orders
-
 - `POST /orders` - Tạo đơn hàng mới
 - `GET /orders/user/:userId` - Lấy đơn hàng của user
 - `GET /orders/:id` - Chi tiết đơn hàng
@@ -277,40 +258,30 @@ npx expo start
 - `GET /orders/stats/summary` - Thống kê đơn hàng
 
 ### Payment
-
 - `POST /payment/webhook/sepay` - Webhook Sepay
 - `GET /payment/status/:orderId` - Kiểm tra trạng thái thanh toán
 
 ---
 
-## 🐛 Known Issues & Future Improvements
-
-### Cần cải thiện:
-
-- [ ] Thêm push notifications
-- [ ] Tối ưu hóa performance cho danh sách lớn
-- [ ] Thêm chức năng đánh giá món ăn
-- [ ] Hỗ trợ đa ngôn ngữ (i18n)
-- [ ] Dark mode
-- [ ] Tích hợp Google Maps cho tracking
+## Các tính năng sẽ phát triển
+- Push notifications cho cập nhật đơn hàng
+- Tối ưu hóa hiệu suất cho danh sách lớn
+- Hệ thống đánh giá và bình luận chi tiết
+- Hỗ trợ đa ngôn ngữ
+- Dark mode
+- Tích hợp Google Maps để tracking vị trí giao hàng
 
 ---
 
-## 📞 Liên hệ
-
+## Liên hệ
 - **Email**: gobitefood@gmail.com
 - **GitHub**: [nhthebao/foodDelivery-mobile-app](https://github.com/nhthebao/foodDelivery-mobile-app)
 
 ---
 
-## 🙏 Acknowledgments
-
-- Firebase cho authentication service
-- MongoDB Atlas cho cloud database
-- Expo team cho mobile development platform
-- SendGrid cho email service
-- Sepay cho payment gateway integration
+## Lời cảm ơn
+Cảm ơn Firebase, MongoDB Atlas, Expo, SendGrid và Sepay vì đã cung cấp các dịch vụ tuyệt vời để xây dựng dự án này.
 
 ---
 
-**Developed with ❤️ by Nhóm 6**
+**Phát triển bởi Nhóm 6**
