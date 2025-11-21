@@ -22,3 +22,5 @@ Thumbs.db
 # Build outputs
 dist/
 build/
+
+server.js.bak
