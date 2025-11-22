@@ -8,6 +8,9 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+// Serve static files (for reset password page)
+app.use(express.static("public"));
+
 const resetSessions = {}; // Store temporary reset sessions
 
 // ============================================
@@ -186,6 +189,7 @@ const userRoutes = require("./routes/user.routes");
 const dessertRoutes = require("./routes/dessert.routes");
 const orderRoutes = require("./routes/order.routes");
 const paymentRoutes = require("./routes/payment.routes");
+const aiRoutes = require("./routes/ai.routes");
 
 // ============================================
 // ROUTES
@@ -193,6 +197,11 @@ const paymentRoutes = require("./routes/payment.routes");
 
 app.get("/", (req, res) => {
   res.send("🚀 Backend connected with Firebase Auth!");
+});
+
+// 🔐 Reset password page
+app.get("/reset-password", (req, res) => {
+  res.sendFile(__dirname + "/public/reset-password.html");
 });
 
 // ✅ Health check endpoint
@@ -227,6 +236,7 @@ app.use("/users", userRoutes);
 app.use("/desserts", dessertRoutes);
 app.use("/orders", orderRoutes);
 app.use("/payment", paymentRoutes);
+app.use("/ai", aiRoutes);
 
 // ============================================
 // RUN SERVER
