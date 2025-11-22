@@ -270,7 +270,7 @@ router.post("/password/request-reset", async (req, res) => {
         };
 
         const resetLink = `${
-          process.env.APP_URL || "http://localhost:3000"
+          process.env.APP_URL || "https://food-delivery-mobile-app.onrender.com"
         }/reset-password?token=${temporaryToken}`;
 
         console.log(`🔗 Reset link: ${resetLink}`);
